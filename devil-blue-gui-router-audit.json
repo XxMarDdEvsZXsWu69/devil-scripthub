@@ -1,0 +1,128 @@
+{
+  "release": "devil-blue-20261019-10",
+  "module_commit": "9a9812469df7b5dad2848abb33c5206f7d57e685",
+  "game_entries_commit": "e39fb7f24bda4d132f439416c7c68ad7467ff351",
+  "map_ids_unchanged": true,
+  "native_logic_unchanged_except_presentation_bootstrap_and_entry_pins": true,
+  "routes": [
+    {
+      "Name": "Mine / Dump23",
+      "Universe": 10740316645,
+      "Place": 79389059854988,
+      "File": "mine-auto-test.lua"
+    },
+    {
+      "Name": "Tap Simulator 2",
+      "Universe": 10629695169,
+      "Place": 72858262610964,
+      "File": "tapping-auto-test.lua"
+    },
+    {
+      "Name": "Climb for Eggs",
+      "Universe": 10765490774,
+      "Place": 85738654635245,
+      "File": "climb-for-eggs.lua"
+    },
+    {
+      "Name": "Lift Rock for Eggs",
+      "Universe": 10768316438,
+      "Place": 76731343328034,
+      "File": "lift-rock-for-eggs.lua"
+    },
+    {
+      "Name": "Ride A Fish",
+      "Universe": 10766691148,
+      "Place": 104050046639813,
+      "File": "aqua-auto-egg.lua"
+    },
+    {
+      "Name": "Steal an Egg",
+      "Universe": 10563114921,
+      "Place": 107778070777162,
+      "File": "devil-steal-an-egg.lua"
+    },
+    {
+      "Name": "Ride a Pet",
+      "Universe": 10035204815,
+      "Place": 124216119978534,
+      "File": "ride-a-pet.lua"
+    },
+    {
+      "Name": "Break and Steal an Egg",
+      "Universe": 10765288803,
+      "Place": 114326934417838,
+      "File": "break-and-steal-an-egg.lua"
+    },
+    {
+      "Name": "Loot to Forge",
+      "Universe": 10684750879,
+      "Place": 118805555015549,
+      "File": "loot-to-forge.lua"
+    },
+    {
+      "Name": "Build An Ant Empire",
+      "Universe": 10436530264,
+      "Place": 78490532994307,
+      "File": "build-an-ant-empire.lua"
+    }
+  ],
+  "before_native_sha256": "59e450810ea548a5bafbc931a3c6b9212c8f57dee482d04815c48c1f9a6137e6",
+  "after_native_sha256": "aec770dcd18ff291b8c3e3f19c50d91ef06d396310aa03c6dd1d784b95efe41b",
+  "live_rendering_verified": false,
+  "public_loader_sha256": "0010f28c60af5eb55e36e276f3ff5925766d104258500ad8de9caf43ad5a91ff",
+  "public_loader_bytes": 126468,
+  "ui_offline_checks": 165,
+  "public_router_universe_place_cases": 30,
+  "language_choices": [
+    "EN",
+    "TH"
+  ],
+  "thai_dictionary_entries": 583,
+  "appearance_controls_removed": true,
+  "language_selector_in_original_window": true,
+  "launcher_background": "#000000",
+  "logo_color": "#FFFFFF",
+  "window_background": "#07090D",
+  "window_background_transparency": 0.14,
+  "language_selector_reserved_row": true,
+  "toggle_on_color": "#A4DDFF",
+  "toggle_off_color": "#202731",
+  "unnamed_control_icons_styled": true,
+  "legacy_language_button_hidden": true,
+  "text_gradient_colors": [
+    "#68B1FF",
+    "#FFFFFF"
+  ],
+  "text_gradient_background_transparent": true,
+  "unicode_dropdown_arrow_removed": true,
+  "input_background": "#181B21",
+  "input_placeholder_color": "#ACB8C9",
+  "native_scale_modified": false,
+  "stable_main_window_during_transitions": true,
+  "native_minimize_restore_test_cycles": 8,
+  "menu_background": "#101319",
+  "menu_background_transparency": 0.14,
+  "bitmap_menu_backgrounds_dark": true,
+  "dropdown_names_not_used_as_switch_state": true,
+  "fullscreen_layers_keep_native_backgrounds": true,
+  "break_native_dialogs_follow_window_visibility": true,
+  "layer_diagnostics_available": true,
+  "mini_waveform_gradient_colors": [
+    "#68B1FF",
+    "#FFFFFF"
+  ],
+  "native_waveform_animation_preserved": true,
+  "waveform_offline_checks": 25,
+  "desktop_startup_offline_checks": 860,
+  "desktop_startup_routes": 10,
+  "desktop_gui_access_profiles": [
+    "CoreGui",
+    "HiddenFolder",
+    "HiddenScreen",
+    "PlayerGui",
+    "ThrowingHelper"
+  ],
+  "pixel_and_rendered_screen_layer_coverage": true,
+  "late_viewport_and_primary_window_discovery": true,
+  "desktop_executor_live_verified": false
+}

@@ -1,0 +1,67 @@
+# DEVIL HUB Tapping automation trial
+
+Release: tapping-auto-test-9. DEVIL HUB module for Place 72858262610964 / Universe 10629695169, based on the supplied client dump under Downloads/Devildumper.
+
+Run:
+
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/Razahaider51216/devil-scripthub/main/loader?v=vm-1"))()
+
+The main loader now selects this module by universe or place and pins its published revision. Direct trial link: tapping-auto-test.lua?v=test-9. This release adds player walk speed and flight controls, faster batched pet deletion and ownership reconciliation for lost deletion replies. Filtered permanent deletion, manual hatch animation skipping and existing automation remain. Auto Open Egg and Enchant workers and purchase/roll requests remain removed. Per-mode accepted/rejected messages and request/result counters remain hidden; diagnostics stay in Copy / Save Report.
+
+DEVIL HUB retains its pinned OuroFlow GUI, silver DEVIL logo, profile, Thai/English button beside minimize, Discord invite/copy button, width/transparency controls, Stop All and Unload. Six tabs: Click / Player, Stars / Boxes, Progress / Rewards, Pets / Hatch, Settings / Report and Discord. All automation and animation skipping start disabled.
+
+## Pet deletion and hatch animation
+
+Open Pets / Hatch. Auto Delete Selected Pets permanently removes matching owned pets. Choose names and/or rarities, then at least one tier. Selecting both names and rarities uses an intersection: a pet must match both. Empty name and rarity filters never mean all pets. Empty tier selection deletes nothing. Tier choices are Normal, Golden, Diamond and Rainbow (native Shiny). Names and rarities come from LaunchPetConfig plus current inventory; Refresh pet filters updates those lists.
+
+Normal is the default selected tier. Keep best per name and tier now defaults to 0, so all eligible selected pets can be removed; the optional 0–5 setting can retain the strongest pets using native PetPower.GetOwnedPowers. Locked/favorite/equipped pets, saved-team pets, EnchantHeldPet and pending-enchant pets are excluded. Reserved/frozen pets and mutated, enchanted, named, signed or serialized collectible pets are preserved, following native cleanup protections. The plan is rebuilt immediately before sending to catch inventory/protection changes.
+
+The native event is PetService.RE.PetActionRequested({Action="Delete", PetIds={...}, Batch=...}), matching the supplied recording and 0361_PetDeleteRequest.lua. Scans run every 0.15 seconds when idle, with at most 400 IDs per event, one pending batch and at least 0.4 seconds between sends. A confirmed batch permits another scan after 0.1 seconds; RateLimited backs off two seconds. Auto Equip Best and deletion wait for each other's pending inventory operation. Matching Delete/Batch results and actual ownership changes provide confirmation; unrelated responses never count. Legacy responses without Batch require matching actual removals and Count/Skipped totals before partial completion. Requested IDs back off thirty seconds after success and eight after other explicit rejections.
+
+Pending IDs/sequence persist across reruns. After twelve seconds without a usable result, current UUID ownership is reconciled: only observed removals count, and remaining owned IDs are eligible for a freshly filtered retry after three seconds. Deleting the same fixed UUID is idempotent; removed IDs cannot become different new pets. Changed filters or new protection flags exclude remaining pets before retrying. Missing player data postpones reconciliation. A transport exception disables the toggle; already-issued work remains observable. Turning the toggle off cannot retract an event already sent.
+
+Skip hatch animation works with manual egg opening and the game's own auto hatch. It wraps native HatchRenderer.Play only while enabled, skips successful non-forced reveals and runs the original controller's finish callback. Secret Play/PlayReveal and cutscene callbacks are skipped only for pet IDs observed in real successful non-forced hatch results. Deferred checks handle native listener ordering; receipt cleanup and secret acknowledgement remain with the game's callbacks. Forced, failed, empty and unrelated secret presentations keep native handling. Disabling or unloading restores the exact original methods unless another tool replaced them later; partial installation rolls back. No hatch purchase event, fabricated reward or server-speed change is sent. Existing animations already running when enabled finish normally; new openings use the wrappers.
+
+Stop All disables both features. Copy / Save Report includes the current deletion preview, pending batch, real counts/reasons and animation hook diagnostics, without adding per-mode status paragraphs.
+
+## Player controls
+
+Click / Player now includes Custom walk speed (8–200 studs/s), Fly and Fly speed (10–200 studs/s), alongside native Infinite Jump. Flight follows the normal keyboard/mobile movement direction. E/Space ascends, Q/Left Ctrl descends; mobile gets held Up/Down arrow buttons. It uses LinearVelocity and AlignOrientation with an upright character, caps diagonal velocity and hovers with no movement input. Text focus suppresses movement input.
+
+Flight pauses while Stars / Boxes / Islands own movement and resumes afterward. It removes its constraints and restores rotation when disabled, paused, unloaded or the character changes. Walk speed tracks the last native speed observed underneath the override and restores it when disabled. Stop All turns both overrides off; native Infinite Jump does not add extra impulses while Fly is enabled. These client movement controls do not change server progression or ownership.
+
+## Movement corrections
+
+- Stars land directly above the star center, replacing the old eight-stud horizontal offset. The movement worker verifies delivery within four studs of the destination and the native pickup range before collecting; native proximity collection can also confirm through replicated data. Live centers replace saved survey coordinates when loaded.
+- Tap Chest uses its native Front, Size, PromptInset and PromptHeight to calculate the interaction anchor. The destination adjusts that anchor to character standing height, avoiding both an extra vertical offset and a broad floor raycast that could select another level. Live chest anchors refresh before claiming. Delivery tolerance is 2.5 studs, followed by a 0.3-second settling period.
+- Breakables use the rotated local bounding rectangle to place the character three studs outside its nearest edge at base-relative standing height. The landing stays fixed for that locked target and refreshes only if its frame or size changes.
+- Unidentified chest survey coordinates request streaming and discover compatible tagged targets before any teleport. Empty survey points wait three seconds and back off ninety seconds. No chest ID or reward is invented.
+- Movement records the actual position and landing error, clears linear/angular velocity, exits sitting and teleports upright. Failed delivery retries every two seconds, with a ten-second backoff after three attempts. Updated live anchors can correct the destination immediately.
+
+## Retained automation
+
+- Auto Unlock Islands: toggle in Progress / Rewards. Reads live IslandConfig.Islands order, price and PortalName, waits for enough Coins after the configured reserve, then teleports beside the nearest loaded hub/next portal for the first locked island. Requires the main world, BridgeLowered and no active native introduction/minigame restriction. It waits for the selected star/box and pending rebirth or shared consuming RPC to finish. Missing portals request streaming around the verified hub anchor; it never invents a portal destination.
+- The island purchase uses IslandService.RE.IslandUnlockRequested:FireServer({Action="Purchase", Island=name}), matching 0069_IslandController.lua. Arrival must be within four studs of the standing destination, with a three-stud delivery tolerance and 0.4-second settling period. The destination uses the portal's live CFrame/Size and character height, four studs beyond its thin face. Funds are checked again after arrival.
+- Only a matching Purchase/Island response with Success=true or Progression.UnlockedIslands confirms a purchase. It waits for replicated unlock data before the next island, avoiding repeated purchases with stale balances. Explicit refusals back off eight seconds. Pending event state survives reruns; after twelve seconds without confirmation the toggle stops and movement releases, while the unresolved ticket prevents duplicate purchasing. Late results still clear the pending state. Details stay in the report.
+- Island movement shares ownership with Stars / Boxes. Auto Rebirth waits while an island approach, purchase or replicated confirmation owns the coin budget. Stop All disables island automation; unload removes its listener and movement but cannot retract a request already sent.
+- Fast Auto Click: native TapRequested packets with Auto=false, unique ClientSequence and Source=button_hold. Requested rate 1–100 CPS, at most four catch-up requests per frame. Only matching positive TapResult replies count internally. Native introduction/minigame restrictions remain.
+- Infinite Jump: uses normal JumpRequest input and the game's DoubleJumpController refill when air jumps are owned. Otherwise reproduces the native force/direction formula, animation and available effects. Typing, dead characters and native restricted activities block added jumps. Stop/unload removes refill and listeners.
+- Auto Collect Stars: merges validated live IDs with fourteen saved star coordinates, skips collected IDs, and calls Collect(starId) after arrival. Real Success or replicated collection confirms the target; pending requests are not duplicated.
+- Auto Boxes / Tap Chest: defaults to Tap Chest; selectable Tap Chest, Breakables or Both. Native Claim(chestId) and server-time cooldowns are preserved. Breakables selects a full-health Crate, Chest or WorldChest owned by the player or unowned, optionally avoiding nearby players. It locks one target, drives the shared tap worker until Broken/zero HP, and then selects another. Disappearance without break evidence is recorded as lost.
+- Auto Rebirth: Auto or exact native amounts including 1, 5, 25 and 125. Exact selections wait for unlock/funds. Sends RebirthRequested({Index=...}) and waits for its response.
+- Auto Buy Upgrades: buys the cheapest selected affordable ClickMultiplier, CriticalChance or AutoClickerSpeed upgrade using native levels, gem prices and progression requirements. Coin/gem reserves remain.
+- Auto Claim Quests: visible, completed and unclaimed native quests.
+- Auto Open Gift: one selected owned gift per request.
+- Auto Equip Best: native EquipBest in Clicks mode.
+
+Islands, stars and boxes share movement ownership; selected targets finish before another movement task. An affordable island purchase takes the next free movement turn. Already-issued star/chest collection calls retain ownership until the actual reply, including after disabling. Changing box type releases only an unissued target. There is one RemoteFunction lock across workers and reruns, retained until actual completion. Ambiguous consuming-call exceptions stop that automation; unacknowledged event requests retain their pending request to avoid duplication.
+
+Copy / Save Report writes DevilTappingTestReport.json and copies JSON when supported. It retains configuration, counters, native reasons/results, pending calls, island price/coins/target/pending result, deletion preview and pending state, hatch animation diagnostics, movement target/actual/landing error, jump mode, chest cooldown, box HP and errors. These details are not displayed as per-mode status messages.
+
+The saved routes contain twelve supplied non-Spawn star coordinates, two known Spawn anchors, an identified SkyIsland chest anchor and six chest discovery points. Spawn3 still requires live discovery. Approximate survey positions may need further in-game verification.
+
+The supplied native island snapshot has Sky Island (5,000,000), Autumn (1,000,000,000), Mushroom (800,000,000,000), Desert (45,000,000,000,000), Crystal Cave (590,000,000,000,000) and Shadow Realm (19,000,000,000,000,000). The implementation reads live configuration rather than hardcoding these prices. Evidence: 0525_IslandConfig.lua, 0069_IslandController.lua and RemoteDump_72858262610964.txt lines 112–116. The dump does not contain server source; acceptance and any additional server requirements require an in-game test.
+
+Validation: Luau compilation and 570 checks (37 core, 28 adapter, 31 movement, 87 world-farm, 57 island, 80 deletion, 19 manual-animation, 15 player and 216 GUI/native-contract checks). New coverage includes batched catch-up under a simulated 200 matching pets/second stream, lost-reply reconciliation and changed protection flags. Player tests exercise speed restore, hover/ascent/descent, mobile buttons, text focus, automatic movement arbitration and cleanup. Main loader validation additionally checks universe/place routing, pinned URLs, unchanged existing routes, startup integrity and cleanup. These are offline mocks; live server throughput, movement acceptance and renderer integration still need in-game confirmation.
+
+Only the new Tap Simulator 2 route is added to the main hub. Existing routes and their pinned revisions are preserved.

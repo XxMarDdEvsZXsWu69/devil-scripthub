@@ -1,0 +1,1380 @@
+-- Shared presentation only. Game callbacks, network APIs and compiler environments stay original.
+local scope=type(getgenv)=="function"and getgenv()or _G
+local VERSION="devil-blue-20261019-10"
+if scope.DevilHubBlueGui and scope.DevilHubBlueGui.Version==VERSION and not scope.DevilHubBlueGui.Stopped then return scope.DevilHubBlueGui end
+if scope.DevilHubBlueGui and scope.DevilHubBlueGui.Destroy then scope.DevilHubBlueGui.Destroy()end
+local controller={Version=VERSION,Stopped=false,Report={screens=0,nodes=0,callbacksReplaced=0}}
+scope.DevilHubBlueGui=controller
+local white=Color3.fromRGB(255,255,255)
+local defaults={Accent="#A4DDFF",Background="#07090D",Scale=100,Language="EN"}
+local settings=table.clone(defaults)
+local configFile="DevilHub-BlueGUI.json"
+local links,tracked,owned,states,roots={},{},{},{},{}
+local inputHosts=setmetatable({},{__mode="k"})
+local dialogs=setmetatable({},{__mode="k"})
+local ui,refreshUI,refreshAll,createUI,windowRoot,refreshLayers={},nil,nil,nil,nil,nil
+local toggleTracks,toggleThumbs=setmetatable({},{__mode="k"}),setmetatable({},{__mode="k"})
+local waveTones=setmetatable({},{__mode="k"})
+local http=game:GetService("HttpService")
+local function hex(text)
+    if type(text)~="string"then return nil end
+    local r,g,b=text:match("^#?(%x%x)(%x%x)(%x%x)$")
+    if not r then return nil end
+    return Color3.fromRGB(tonumber(r,16),tonumber(g,16),tonumber(b,16))
+end
+local function valid(input)
+    if type(input)~="table"then return end
+    -- The fixed palette replaces old saved custom colors.
+    if input.Language=="EN"or input.Language=="TH"then settings.Language=input.Language end
+    -- Native GUI sizing is preserved without a shared size override.
+end
+if type(readfile)=="function"and type(isfile)=="function"then pcall(function()if isfile(configFile)then valid(http:JSONDecode(readfile(configFile)))end end)end
+local palette={}
+local function updatePalette()
+    palette.Accent=hex(settings.Accent);palette.Background=hex(settings.Background)
+    palette.Blue=Color3.fromRGB(104,177,255)
+    palette.Surface=Color3.fromRGB(11,13,18)
+    palette.Surface2=Color3.fromRGB(16,19,25)
+    palette.Off=Color3.fromRGB(32,39,49)
+    palette.Muted=Color3.fromRGB(153,169,185)
+    palette.Input=Color3.fromRGB(24,27,33)
+    palette.Placeholder=Color3.fromRGB(172,184,201)
+end
+updatePalette()
+local function keep(signal,fn,bag)
+    local link=signal:Connect(fn);table.insert(bag or links,link);return link
+end
+local function save()
+    if type(writefile)=="function"then pcall(function()writefile(configFile,http:JSONEncode({Language=settings.Language}))end)end
+end
+-- BEGIN SHARED LOCALIZATION
+-- Render two-tone/translated labels in non-interactive overlays. The engine's original
+-- Text, identifiers, input values and callbacks remain untouched.
+local phrasePairs={
+    {"Accent Color","สีหลัก"},
+    {"Add/Remove Hits On Quick Bar 2","เพิ่ม/ลบปุ่มตีใน Quick Bar 2"},
+    {"After Each Boss, Hops To A Less Crowded Server To Fight Again","ตีบอสเสร็จแล้วย้ายไปเซิร์ฟคนน้อยเพื่อตีต่อ"},
+    {"Allowed Materials","สัตว์ที่อนุญาตให้ใช้"},
+    {"Also Show The Eggs Placed In Your Own Base","แสดงป้ายชื่อไข่ที่วางไว้ในฐานของคุณด้วย"},
+    {"Also Steal Eggs Missing From Your Index, Highest Area First","ขโมยไข่ที่คุณยังไม่มีในสมุดสะสม (เล็งพื้นที่สูงสุดก่อน)"},
+    {"Always Favorite Species","ล็อกหัวใจสัตว์ชนิดนี้เสมอ"},
+    {"Always Favorite These Species","สัตว์ชนิดนี้จะถูกล็อกหัวใจเสมอ"},
+    {"Amethyst Butterfly","ผีเสื้ออเมทิสต์ (Amethyst)"},
+    {"Animal Filter","เลือกสัตว์"},
+    {"Anti AFK","ป้องกันหลุดเมื่อไม่ขยับ"},
+    {"Anti Guard Panel","ซ่อนพาเนล Anti Guard"},
+    {"Anti Ragdoll","กันล้ม (Anti Ragdoll)"},
+    {"Anti Trap","กันกับดัก (Anti Trap)"},
+    {"Anti-AFK","ป้องกันหลุดเมื่อไม่ขยับ"},
+    {"Ants","มด"},
+    {"Apply","นำไปใช้"},
+    {"Attack","โจมตี"},
+    {"Attack Speed","ความเร็วในการโจมตี"},
+    {"Attacking boss with Bat","กำลังตีบอสด้วย Bat"},
+    {"Attacking Essence eggs","กำลังตีไข่เก็บ Essence"},
+    {"Auto Attack","โจมตีอัตโนมัติ"},
+    {"Auto Banjo Cricket","ออโต้ Banjo Cricket"},
+    {"Auto Break","ทุบอัตโนมัติ"},
+    {"Auto Build","สร้างอัตโนมัติ"},
+    {"Auto Butterfly Bloom","ออโต้งอกผีเสื้อเบ่งบาน"},
+    {"Auto Buy","ซื้ออัตโนมัติ"},
+    {"Auto Buy Demon Eggs","ซื้อไข่ Demon ด้วย Fallen Tokens อัตโนมัติ"},
+    {"Auto Buy Food","ออโต้ซื้ออาหาร"},
+    {"Auto Buy Halloween Dimension Egg","ซื้อไข่มิติฮาโลวีนอัตโนมัติ"},
+    {"Auto Buy Pickaxes","ซื้อพลั่วอัตโนมัติ"},
+    {"Auto Buy Radars","ออโต้ซื้อเรดาร์"},
+    {"Auto Buy Scramble Shop","ออโต้ซื้อของร้าน Scramble"},
+    {"Auto Buy Scrambled","ออโต้ซื้อ Scrambled"},
+    {"Auto Buy Trail","ออโต้ซื้อเส้นทางวิ่ง (Trail)"},
+    {"Auto Buy Trails","ซื้อ Trails อัตโนมัติ"},
+    {"Auto Catch Shooting Star","เก็บดาวตกอัตโนมัติ"},
+    {"Auto Claim","รับรางวัลอัตโนมัติ"},
+    {"Auto Claim Index","ออโต้รับรางวัลสมุดสะสม"},
+    {"Auto Claim Index Reward","ออโต้รับรางวัลสมุดสะสม"},
+    {"Auto Claim Mastery","ออโต้รับรางวัล Mastery"},
+    {"Auto Click","คลิกอัตโนมัติ"},
+    {"Auto Climb","ปีนอัตโนมัติ"},
+    {"Auto Collect","เก็บอัตโนมัติ"},
+    {"Auto Collect Eggs","เก็บไข่อัตโนมัติ"},
+    {"Auto Craft Essence","ออโต้คราฟต์ Essence"},
+    {"Auto Delete","ลบอัตโนมัติ"},
+    {"Auto Equip","สวมใส่อัตโนมัติ"},
+    {"Auto Equip Best","สวมใส่ตัวที่ดีที่สุดอัตโนมัติ"},
+    {"Auto Farm","ฟาร์มอัตโนมัติ"},
+    {"Auto Farm Monsters","ฟาร์มมอนสเตอร์อัตโนมัติ"},
+    {"Auto Favorite","เพิ่มรายการโปรดอัตโนมัติ"},
+    {"Auto Favorite Equipped","ออโต้ล็อกหัวใจตัวที่ใส่"},
+    {"Auto Favorite Pet","ออโต้ล็อกหัวใจสัตว์เลี้ยง"},
+    {"Auto Feed","ให้อาหารอัตโนมัติ"},
+    {"Auto Feed Pets","ออโต้ให้อาหารสัตว์"},
+    {"Auto Fishing","ตกปลาอัตโนมัติ"},
+    {"Auto Forge","ตีของอัตโนมัติ"},
+    {"Auto Fuse","รวมร่างอัตโนมัติ"},
+    {"Auto Fuse Machine","ออโต้ผสมสัตว์ (Fuse Machine)"},
+    {"Auto Ghost Dog Quest","ทำเควสต์ Ghost Dog อัตโนมัติ"},
+    {"Auto Go on Treadmill","เข้าลู่วิ่งอัตโนมัติ"},
+    {"Auto Hatch","ฟักอัตโนมัติ"},
+    {"Auto Hatch & Equip","ออโต้ฟักและสวมใส่"},
+    {"Auto Hatch Eggs","ฟักไข่อัตโนมัติ"},
+    {"Auto Hit","โจมตีอัตโนมัติ"},
+    {"Auto Hit Egg Holders","ออโต้ตีคนถือไข่"},
+    {"Auto Hit Nearest Player","ออโต้ตีคนใกล้สุด"},
+    {"Auto Hit Specific Player","ออโต้ตีระบุตัวคน"},
+    {"Auto Hop","ออโต้ย้ายเซิร์ฟเวอร์"},
+    {"Auto Join + Essence + Boss","เข้าอีเวนต์ + ตี Essence + ตีบอสอัตโนมัติ"},
+    {"Auto Lab Trade-In","ออโต้แลกของในแล็บ"},
+    {"Auto Lift","ยกอัตโนมัติ"},
+    {"Auto Load Config","ออโต้โหลดคอนฟิก"},
+    {"Auto Load Script","ออโต้โหลดสคริปต์"},
+    {"Auto Loot","เก็บของอัตโนมัติ"},
+    {"Auto Mech Boss","ออโต้ตีบอสหุ่นรบ"},
+    {"Auto Mine","ขุดอัตโนมัติ"},
+    {"Auto Mining","ขุดอัตโนมัติ"},
+    {"Auto Mutate","ออโต้กลายพันธุ์"},
+    {"Auto Mutation","ออโต้กลายพันธุ์"},
+    {"Auto Phantom Express","เล่น Phantom Express อัตโนมัติ"},
+    {"Auto Pick Up","เก็บสัตว์อัตโนมัติ"},
+    {"Auto Pick Up & Bank","เก็บสัตว์และส่งเข้าเซฟโซน"},
+    {"Auto Pick Up + Bank","เก็บสัตว์และส่งเข้าเซฟโซน"},
+    {"Auto Pickup","เก็บสัตว์อัตโนมัติ"},
+    {"Auto Place Best Pets","ออโต้วางตัวที่เก่งสุด"},
+    {"Auto Place Egg","วางไข่อัตโนมัติ"},
+    {"Auto Place Lab Reward Eggs","ออโต้วางไข่รางวัลจากแล็บ"},
+    {"Auto Plant Eggs","ออโต้วางไข่"},
+    {"Auto Play Cursed Island Wars","เล่น Cursed Island Wars อัตโนมัติ"},
+    {"Auto Progress","ออโต้ความคืบหน้า"},
+    {"Auto Progression","ออโต้ความคืบหน้า"},
+    {"Auto Pumpkin Moon","เล่น Pumpkin Moon อัตโนมัติ"},
+    {"Auto Rebirth","เกิดใหม่อัตโนมัติ"},
+    {"Auto Rejoin When Disconnect","เข้าเซิร์ฟใหม่อัตโนมัติเมื่อหลุด"},
+    {"Auto Reroll","สุ่มใหม่อัตโนมัติ"},
+    {"Auto Reroll Lab Recipe","ออโต้สุ่มสูตรแล็บใหม่"},
+    {"Auto Ride","ขี่อัตโนมัติ"},
+    {"Auto Roll","สุ่มอัตโนมัติ"},
+    {"Auto Save Config","ออโต้เซฟคอนฟิก"},
+    {"Auto Sell","ขายอัตโนมัติ"},
+    {"Auto Sell Egg","ออโต้ขายไข่"},
+    {"Auto Sell Eggs","ขายไข่อัตโนมัติ"},
+    {"Auto Sell Lab Egg","ออโต้ขายไข่แล็บ"},
+    {"Auto Sell Pet","ออโต้ขายสัตว์เลี้ยง"},
+    {"Auto Sell Pets","ขายสัตว์เลี้ยงอัตโนมัติ"},
+    {"Auto Shop","ออโต้ร้านค้า"},
+    {"Auto Spawn","เรียกอัตโนมัติ"},
+    {"Auto Steal","ขโมยอัตโนมัติ"},
+    {"Auto Steal Halloween Eggs","ขโมยไข่ฮาโลวีนอัตโนมัติ"},
+    {"Auto Swing","ตีอัตโนมัติ"},
+    {"Auto Tap","คลิกอัตโนมัติ"},
+    {"Auto Trade Souls","แลกวิญญาณอัตโนมัติ"},
+    {"Auto Trade Up","ออโต้เทรดอัป"},
+    {"Auto Treadmill","วิ่งลู่อัตโนมัติ"},
+    {"Auto Unfavorite Equipped","ออโต้ปลดล็อกตัวที่ใส่ (ถ้าไม่ตรงกฎ)"},
+    {"Auto Upgrade","อัปเกรดอัตโนมัติ"},
+    {"Auto Upgrade Base","ออโต้อัปเกรดฐาน"},
+    {"Auto Upgrade Luck","ออโต้อัปเกรดโชค"},
+    {"Auto Upgrade Pen","อัปเกรดคอกอัตโนมัติ"},
+    {"Auto Upgrade Treadmill","อัปเกรดลู่วิ่งอัตโนมัติ"},
+    {"Auto Use Enchanted Essence","ออโต้ใช้ Enchanted Essence"},
+    {"Auto Use Scrambled","ออโต้ใช้ Scrambled"},
+    {"Auto Vacuum Ghouler Boss","ทำบอส Vacuum Ghouler อัตโนมัติ"},
+    {"Auto Volcano Dip","ออโต้ชุบภูเขาไฟ"},
+    {"Auto Wisp","ออโต้ Wisp"},
+    {"Automatically Buy Trails When Affordable","ซื้อเส้นทางวิ่งอัตโนมัติเมื่อเงินพอ"},
+    {"Automatically Upgrade Base When Money Is Available","อัปเกรดฐานอัตโนมัติเมื่อมีเงินพอ"},
+    {"Automatically Upgrade Treadmill When Money Is Available","อัปเกรดลู่วิ่งอัตโนมัติเมื่อมีเงินพอ"},
+    {"Automation","ระบบอัตโนมัติ"},
+    {"Background Color","สีพื้นหลัง"},
+    {"Blacklist Sell Eggs","ไข่ที่ห้ามขาย (Blacklist)"},
+    {"Blacklist Sell Pets","สัตว์ที่ห้ามขาย (Blacklist)"},
+    {"Boss Server Hop","ย้ายเซิร์ฟเวอร์ตีบอส"},
+    {"Break","ทุบไข่"},
+    {"Build","สร้าง"},
+    {"Butterfly Bloom","ผีเสื้อเบ่งบาน (Butterfly Bloom)"},
+    {"Buy Another Scrambled From The Event Shop When You Run Out","ซื้อเพิ่มจากร้านกิจกรรมเมื่อของหมด"},
+    {"Buy Scrambled From The Dr Scramble Shop As Soon As You Run Out","ซื้อ Scrambled จากร้าน ดร.สแครมเบิล ทันทีเมื่อของหมด"},
+    {"Buy The Picked Items With Samples","ซื้อไอเทมที่เลือกด้วย Samples"},
+    {"Cancel","ยกเลิก"},
+    {"Carry Speed","ความเร็วตอนถือไข่"},
+    {"Catch Butterflies","จับผีเสื้อ"},
+    {"Catch Mode","โหมดการจับ"},
+    {"Catch Priority","ลำดับความสำคัญการจับ"},
+    {"changing a filter here also changes it in Auto Steal, and back","เปลี่ยนตัวกรองที่นี่ จะไปเปลี่ยนในออโต้ขโมยด้วยอัตโนมัติ"},
+    {"Character","ตัวละคร (Character)"},
+    {"Chase","ไล่ล่า (Chase)"},
+    {"Chase Settings","ตั้งค่าโหมดไล่ล่า"},
+    {"Cherry Blossom","ซากุระ (Cherry Blossom)"},
+    {"Circle","เดินวนรอบ (Circle)"},
+    {"Claim","รับรางวัล"},
+    {"Claim All","รับรางวัลทั้งหมด"},
+    {"Claim Index Rewards As Soon As They Unlock","รับรางวัลสมุดสะสมทันทีที่ปลดล็อก"},
+    {"Claim Offline Money & Index Rewards","รับเงินตอนออฟไลน์และรางวัลสมุดสะสม"},
+    {"Claims Boss Mastery Rewards As Soon As They Unlock","รับรางวัล Boss Mastery ทันทีที่ปลดล็อก"},
+    {"Climb","ปีน"},
+    {"Climb Speed","ความเร็วในการปีน"},
+    {"Close","ปิด"},
+    {"Collect","เก็บ"},
+    {"Collect Eggs","เก็บไข่"},
+    {"Combat","การต่อสู้ (Combat)"},
+    {"Common","ทั่วไป (Common)"},
+    {"Config","คอนฟิก"},
+    {"Confirm","ยืนยัน"},
+    {"Copy","คัดลอก"},
+    {"Copy / Save Event Report","คัดลอก / บันทึกรายงานอีเวนต์"},
+    {"Copy / Save Movement Report","คัดลอก / บันทึกรายงานการเคลื่อนที่"},
+    {"Copy Current Job Id","คัดลอก Job ID ปัจจุบัน"},
+    {"Copy Discord","คัดลอก Discord"},
+    {"Copy Discord Invite","คัดลอกลิงก์ Discord"},
+    {"Copy Job ID","คัดลอก Job ID"},
+    {"Copy Link","คัดลอกลิงก์"},
+    {"Cosmic","จักรวาล (Cosmic)"},
+    {"Create New Config","สร้างคอนฟิกใหม่"},
+    {"Daily","รายวัน"},
+    {"Dark background","พื้นหลังฟ้าเข้ม"},
+    {"Default blue theme restored","คืนค่าธีมสีฟ้าแล้ว"},
+    {"Delay","เวลาหน่วง"},
+    {"Delete","ลบ"},
+    {"Delete Config","ลบคอนฟิก"},
+    {"Delivers The Egg To The Safe Zone In A Few Seconds, Needs Enough Speed","ส่งไข่กลับเซฟโซนในไม่กี่วินาที (ต้องตั้ง Speed ให้พอ)"},
+    {"Delivers The Same Way As Instant Steal V2 Instead Of Using Steps","ส่งไข่กลับแบบเดียวกับ Instant Steal V2 โดยไม่ใช้สเต็ป"},
+    {"Disable 3D Render","ปิดการแสดงผลภาพ 3D"},
+    {"Disable 3D Rendering","ปิดภาพ 3D (จอดำ)"},
+    {"Disabled","ปิดใช้งาน"},
+    {"Discord","ดิสคอร์ด"},
+    {"Discord Webhook","ดิสคอร์ดเว็บฮุก"},
+    {"Dismount","ลงจากสัตว์เลี้ยง"},
+    {"Distance","ระยะห่าง"},
+    {"Divine","เทพเจ้า (Divine)"},
+    {"Dr Scramble Lab & Mech","ห้องแล็บ Dr Scramble & หุ่นรบ"},
+    {"Drag Any Panel To Place It Where You Like","ลากหน้าต่างใดก็ได้ไปวางในตำแหน่งที่คุณต้องการ"},
+    {"Egg Finder","ค้นหาไข่ (Egg Finder)"},
+    {"Egg Max Rarity","ระดับหายากสูงสุดของไข่"},
+    {"Egg Predictor","พยากรณ์ไข่ (Egg Predictor)"},
+    {"Egg Sell Value","มูลค่าการขายไข่"},
+    {"Eggs","ไข่"},
+    {"Eject Incomplete Slots","นำตัวที่ไม่ครบเซ็ตออก"},
+    {"Emerald Butterfly","ผีเสื้อมรกต (Emerald)"},
+    {"Enabled","เปิดใช้งาน"},
+    {"Enchanted Forest","ป่าต้องมนตร์ (Enchanted Forest)"},
+    {"Enter 1000000 or 1M to Steal animals earning at least 1M/s. Combines with selected rarity/name. Use 0 to disable income filtering.","ใส่ 1000000 หรือ 1M เพื่อ Steal รายได้ 1M/s ขึ้นไป ใช้ร่วมกับระดับและชื่อที่เลือก ใส่ 0 เพื่อปิดเงื่อนไขเงิน"},
+    {"Epic","มหากาพย์ (Epic)"},
+    {"Equip","สวมใส่"},
+    {"Equip Best","สวมใส่ตัวที่ดีที่สุด"},
+    {"Equip Best When A Better Pet Appears","ใส่สัตว์เลี้ยงที่ดีกว่าอัตโนมัติเมื่อหาได้"},
+    {"Error; check report","เกิดข้อผิดพลาด ดูรายงาน"},
+    {"Esp","มองทะลุ (ESP)"},
+    {"Esp Egg Size","ขนาด ESP ไข่"},
+    {"Esp Eggs","มองทะลุไข่"},
+    {"Esp Fixed Size","ขนาดคงที่ (Fixed Size)"},
+    {"Esp Guard Size","ขนาด ESP ยาม"},
+    {"Esp Guards","มองทะลุยาม (ESP Guards)"},
+    {"Esp Lost Parts","มองทะลุชิ้นส่วนเควส"},
+    {"Esp Min Rarity","ระดับความหายากขั้นต่ำที่จะมองทะลุ"},
+    {"Esp Own Base Eggs","มองทะลุไข่ในฐานตัวเอง"},
+    {"Esp Player Info","ข้อมูลผู้เล่น"},
+    {"Esp Player Size","ขนาดข้อความผู้เล่น"},
+    {"Esp Players","มองทะลุผู้เล่น (ESP Players)"},
+    {"Esp Show Info","ข้อมูลที่จะแสดง"},
+    {"Essence Min Rarity","ระดับต่ำสุดที่จะใช้ Essence"},
+    {"Essence Min Value","มูลค่าต่ำสุดที่จะใช้ Essence"},
+    {"Essence Priority","ลำดับความสำคัญ Essence"},
+    {"Essence Skip Enchanted Eggs","ข้ามไข่ที่ติด Enchanted"},
+    {"Essence Target Eggs","เป้าหมายไข่ใช้ Essence"},
+    {"Eternal","นิรันดร์ (Eternal)"},
+    {"Event","กิจกรรม"},
+    {"Event Movement","รูปแบบการเล่น"},
+    {"Event Status","สถานะอีเวนต์"},
+    {"Events","กิจกรรม"},
+    {"Export Config","ส่งออกคอนฟิก"},
+    {"Farm","เก็บสัตว์"},
+    {"Farm Hud","แสดงหน้าต่างฟาร์ม (Farm HUD)"},
+    {"Farm Status","สถานะการฟาร์ม"},
+    {"Fast Delivery","ส่งไข่ด่วนพิเศษ (Fast Delivery)"},
+    {"Favorite All Equipped Pets Once","ล็อกหัวใจสัตว์ทุกตัวที่กำลังใส่ 1 ครั้ง"},
+    {"Favorite Equipped Now","ล็อกหัวใจตัวที่ใส่เดี๋ยวนี้"},
+    {"Favorite Matching Pets Once","กดล็อกหัวใจสัตว์ที่ตรงเงื่อนไข 1 ครั้ง"},
+    {"Favorite Min Rarity","ระดับหายากขั้นต่ำที่จะล็อก"},
+    {"Favorite Mutations","สายพันธุ์ที่จะล็อกหัวใจ"},
+    {"Favorite Pets Matching The Rules Below","ล็อกหัวใจสัตว์ที่ตรงตามกฎด้านล่าง"},
+    {"Favorite Pets Now","ล็อกหัวใจสัตว์เลี้ยงเดี๋ยวนี้"},
+    {"Favorite Pets Of The Chosen Rarity And Every Rarity Above It (Off = Skip)","ล็อกหัวใจสัตว์ระดับนี้ขึ้นไป (Off = ข้าม)"},
+    {"Favorite Rule","กฎการล็อกหัวใจ"},
+    {"Features","ฟังก์ชัน"},
+    {"Filter","ตัวกรอง"},
+    {"Filter by animal income","เลือกตามรายได้สัตว์"},
+    {"Filter Features...","ค้นหาเมนู..."},
+    {"Filters","ตัวกรอง"},
+    {"Fishing","ตกปลา"},
+    {"Flight speed (studs/s)","ความเร็วลอย (studs/s)"},
+    {"Fly","บิน"},
+    {"Fly Speed","ความเร็วในการบิน"},
+    {"Flying toward target","กำลังลอยเข้าหาเป้าหมาย"},
+    {"For After A Rare Spawns: This Rarity Or Higher","หลังจากไข่หายากเกิด: จะรอระดับนี้หรือสูงกว่า"},
+    {"Forge","ตีของ"},
+    {"Fps And Ping","แสดง FPS และ Ping"},
+    {"Fps And Ping Size","ขนาด FPS และ Ping"},
+    {"FPS Boost","เพิ่ม FPS"},
+    {"Fps Cap","จำกัด FPS"},
+    {"Fuse Predictor","พยากรณ์การผสม (Fuse Predictor)"},
+    {"Fuse Priority Mode","ลำดับความสำคัญการผสม"},
+    {"Fuse Recipe","สูตร Fuse"},
+    {"Fuse: deposit recipe + claim Celestial egg","Fuse: ฝากตามสูตร + รับไข่ Celestial"},
+    {"Fusion Machines","เครื่องผสม"},
+    {"Growing","กำลังฟัก"},
+    {"GUI / Colors","GUI / สี"},
+    {"GUI / Colors / Language","GUI / สี / ภาษา"},
+    {"Halloween","ฮาโลวีน"},
+    {"Hatch","ฟัก"},
+    {"Hatch Eggs Of The Chosen Rarity And Every Rarity Above It","ฟักไข่ระดับนี้และระดับที่สูงกว่าทั้งหมด"},
+    {"Hatch Min Rarity","ระดับขั้นต่ำที่จะฟัก"},
+    {"Hatch Now","ฟักไข่ทันที"},
+    {"Hatch Specific Eggs","ฟักเฉพาะไข่ที่กำหนด"},
+    {"Hatching","การฟัก"},
+    {"Hell / Demon Event","อีเวนต์ Hell / Demon"},
+    {"Hide Other Players' Pets","ซ่อนสัตว์ผู้เล่นอื่น"},
+    {"Higher Is Safer But Takes Longer","ยิ่งเยอะยิ่งปลอดภัย แต่จะใช้เวลาส่งนานขึ้น"},
+    {"Highest Rarity First","ระดับสูงสุดก่อน"},
+    {"Hit Aura","ตีออร่า (Hit Aura)"},
+    {"Hit Lead","กะระยะล่วงหน้า (Hit Lead)"},
+    {"Hit Max Speed","ความเร็วสูงสุดตอนตี"},
+    {"Hit Player","ระบุชื่อผู้เล่นที่จะตี"},
+    {"Hit Sweep","ระยะกวาดตี (Hit Sweep)"},
+    {"Hit Tween Speed","ความเร็วพุ่งตี (Tween)"},
+    {"Home","หน้าแรก"},
+    {"Hop","ย้ายเซิร์ฟ"},
+    {"Hop Mode","โหมดย้ายเซิร์ฟเวอร์"},
+    {"How Far You Move Back And Forth In Front Of The Target","ระยะการเคลื่อนที่เดินหน้าถอยหลังหน้าเป้าหมาย"},
+    {"Idle","ว่าง"},
+    {"Import / Export","นำเข้า / ส่งออก"},
+    {"Import Config Text","วางข้อความคอนฟิก"},
+    {"In Bag","ในกระเป๋า"},
+    {"Infinite Jump","กระโดดไม่จำกัด"},
+    {"Info","ข้อมูล"},
+    {"Instant Pickup","เก็บของทันที"},
+    {"Instant Prompts","กดปุ่มโต้ตอบทันที"},
+    {"Instant Steal","ขโมยทันที"},
+    {"Instant Steal Steps","จำนวนสเต็ปขโมยทันที"},
+    {"Instant Steal V2","ขโมยไข่ทันที V2"},
+    {"Instant Steal V2 May Not Work Well Below 40 Fps Or Above 200 Ms Ping.","Instant Steal V2 อาจทำงานผิดปกติหาก FPS ต่ำกว่า 40 หรือ Ping สูงกว่า 200 ms"},
+    {"Instant Steal Zones","โซนที่ใช้ขโมยทันที (Instant Steal Zones)"},
+    {"Invisibility","ล่องหน (Invisibility)"},
+    {"Islands","เกาะ"},
+    {"Job Id","รหัสห้อง (Job ID)"},
+    {"Join","เข้าเล่น"},
+    {"Join Job Id","เข้ารหัสห้อง (Join Job ID)"},
+    {"Join when Hell opens","เข้าประตูเมื่อ Hell เปิด"},
+    {"Joins New Servers To Find Eggs That Match The Filters Below","สุ่มเข้าเซิร์ฟเวอร์ใหม่เพื่อหาไข่ที่ตรงตามตัวกรองด้านล่าง"},
+    {"Jump Power","แรงกระโดด"},
+    {"Keep Equipped Pets Favorited","ล็อกหัวใจสัตว์ที่กำลังใส่อยู่เสมอ"},
+    {"Keep Hopping For","ระยะเวลาย้ายเซิร์ฟต่อเนื่อง"},
+    {"Keep Lab Pets","เก็บสัตว์ห้องแล็บไว้"},
+    {"Keep Mutated Eggs","เก็บไข่กลายพันธุ์ไว้"},
+    {"Keep Mutated Lab Eggs","เก็บไข่แล็บกลายพันธุ์ไว้"},
+    {"Keep Mutated Pets","เก็บสัตว์กลายพันธุ์ไว้"},
+    {"Keep Samples","สำรอง Samples ไว้"},
+    {"Keep the heaviest animal","เก็บสัตว์ตัวหนักที่สุดไว้"},
+    {"Keeps Fighting Every Boss It Finds And Hopping For This Long","สู้บอสทุกตัวที่เจอและย้ายเซิร์ฟต่อเนื่องตามเวลานี้"},
+    {"Lab Banners","ป้ายแบนเนอร์แล็บ"},
+    {"Lab Egg Max Rarity","ระดับหายากสูงสุดของไข่แล็บ"},
+    {"Lab Egg Sell Value","มูลค่าการขายไข่แล็บ"},
+    {"Lab Eggs Of These Pets Are Never Sold","ไข่แล็บของสัตว์เหล่านี้จะไม่ถูกขาย"},
+    {"Lab Predictor","พยากรณ์ห้องแล็บ (Lab Predictor)"},
+    {"Language","ภาษา"},
+    {"Least Players","คนน้อยสุด"},
+    {"Legendary","ตำนาน (Legendary)"},
+    {"Lift","ยก"},
+    {"Lift Rock","ยกหิน"},
+    {"Lift Speed","ความเร็วในการยก"},
+    {"Light blue / Accent","ฟ้าอ่อน / สีหลัก"},
+    {"Light Dark","แสง & ความมืด (Light Dark)"},
+    {"Load","โหลด"},
+    {"Load Config","โหลดคอนฟิก"},
+    {"Load Saved Settings","โหลดค่าที่บันทึก"},
+    {"Loading unavailable: executor readfile API missing","โหลดไม่ได้ ตัวรันไม่รองรับ readfile"},
+    {"Loot","ของที่ได้รับ"},
+    {"Low Graphics","กราฟิกต่ำ"},
+    {"Lowest Rarity First","ระดับต่ำสุดก่อน"},
+    {"Lowest To Highest","จากต่ำไปสูง"},
+    {"Main","หลัก"},
+    {"Main Weapon Hold","หน่วงเวลาอาวุธหลัก"},
+    {"Match All","ตรงทุกเงื่อนไข"},
+    {"Material Rarities","ระดับสัตว์ที่ใช้เป็นวัตถุดิบ"},
+    {"Material Rules","ขอบเขตวัตถุดิบ"},
+    {"Max material weight (0 = unlimited)","น้ำหนักวัตถุดิบสูงสุด (0 = ไม่จำกัด)"},
+    {"Max Rarity To Fuse","ระดับหายากสูงสุดที่จะผสม"},
+    {"Mech Tween Speed","ความเร็วบินไปตีหุ่นรบ"},
+    {"Merge: 3 identical animals into an egg","Merge: ผสมสัตว์ชื่อเดียวกัน 3 ตัวเป็นไข่"},
+    {"Min Esp Value","มูลค่าขั้นต่ำที่จะมองทะลุ"},
+    {"Min Favorite Value","มูลค่าขั้นต่ำที่จะล็อก"},
+    {"Min Hatch Value","มูลค่าขั้นต่ำที่จะฟัก"},
+    {"Min Mutation Value","มูลค่าขั้นต่ำการกลายพันธุ์"},
+    {"Min Place Value","มูลค่าขั้นต่ำที่จะวาง"},
+    {"Min Rarity","ระดับขั้นต่ำ"},
+    {"Min Steal Value","มูลค่าขั้นต่ำที่จะขโมย"},
+    {"Mine","เหมือง"},
+    {"Minimum Pickup income ($/s)","เงินขั้นต่ำ Auto Pickup ($/s)"},
+    {"Mining","การขุด"},
+    {"Mining Speed","ความเร็วในการขุด"},
+    {"Misc","อื่นๆ (Misc)"},
+    {"Most Players","คนเยอะสุด"},
+    {"Mount","ขึ้นขี่"},
+    {"Movement","การเคลื่อนที่"},
+    {"Mutate Min Rarity","ระดับความหายากขั้นต่ำที่จะกลายพันธุ์"},
+    {"Mutate Min Value","มูลค่าขั้นต่ำการกลายพันธุ์"},
+    {"Mutate Priority","ลำดับความสำคัญการกลายพันธุ์"},
+    {"Mutate Target Eggs","ไข่เป้าหมายการกลายพันธุ์"},
+    {"Mutation Check (Empty = Skip)","ตรวจสอบสายพันธุ์ (เว้นว่าง = ข้าม)"},
+    {"Mutation Min Rarity","ระดับไข่กลายพันธุ์ขั้นต่ำ"},
+    {"Mutation Priority","ลำดับความสำคัญกลายพันธุ์"},
+    {"Mutation Target Eggs","เป้าหมายไข่กลายพันธุ์"},
+    {"Mutations To Use","การกลายพันธุ์ที่จะใช้"},
+    {"Mythic","มายากล (Mythic)"},
+    {"Nearest","ใกล้ที่สุดก่อน (Nearest)"},
+    {"Never Sell Mutated Eggs","ห้ามขายไข่กลายพันธุ์เด็ดขาด"},
+    {"Never Sell Mutated Lab Eggs","ห้ามขายไข่แล็บที่กลายพันธุ์เด็ดขาด"},
+    {"Never Sell Mutated Pets","ห้ามขายสัตว์กลายพันธุ์เด็ดขาด"},
+    {"Never Spend Below This Many Samples","ห้ามใช้ Samples จนต่ำกว่าที่ตั้งไว้"},
+    {"No saved settings; current values kept","ยังไม่มีค่าที่บันทึก ใช้ค่าปัจจุบัน"},
+    {"No settings loaded","ยังไม่ได้โหลดตั้งค่า"},
+    {"Noclip","ทะลุสิ่งกีดขวาง"},
+    {"Notification","การแจ้งเตือน"},
+    {"Notifications","การแจ้งเตือน"},
+    {"Off","ปิดอยู่"},
+    {"Only Eggs Of This Rarity And Above Are Used","ใช้เฉพาะไข่ระดับนี้ขึ้นไป"},
+    {"Only Eggs Of This Rarity And Above Get Mutated","เฉพาะไข่ระดับนี้ขึ้นไปเท่านั้นที่จะถูกกลายพันธุ์"},
+    {"Only Eggs Of This Rarity And Above Get The Essence","ใช้กับไข่ระดับนี้ขึ้นไปเท่านั้น"},
+    {"Only For Chase Mode","ใช้เฉพาะในโหมดไล่จับ"},
+    {"Only Fuse These Species (Empty = All)","ผสมเฉพาะสายพันธุ์เหล่านี้ (เว้นว่าง = ทั้งหมด)"},
+    {"Only Hatch These Eggs (Empty = All)","ฟักเฉพาะไข่เหล่านี้ (เว้นว่าง = ทั้งหมด)"},
+    {"Only Mutate These Eggs (Empty = All)","กลายพันธุ์เฉพาะไข่เหล่านี้ (เว้นว่าง = ทั้งหมด)"},
+    {"Only Place Eggs Of The Picked Rarities (Empty = All)","วางเฉพาะไข่ระดับที่เลือก (เว้นว่าง = ทั้งหมด)"},
+    {"Only Place These Eggs (Empty = All)","วางเฉพาะไข่เหล่านี้ (เว้นว่าง = ทั้งหมด)"},
+    {"Only Steal These Eggs (Empty = All)","ขโมยเฉพาะไข่เหล่านี้ (เว้นว่าง = ทั้งหมด)"},
+    {"Only Trade And Steal For These Banners (Empty = All)","แลก/ขโมยเฉพาะแบนเนอร์ที่เลือก"},
+    {"Only Use The Consumable On These Eggs (Empty = All)","ใช้ไอเทมกับไข่พวกนี้ (เว้นว่าง = ทั้งหมด)"},
+    {"Only Use The Essence On These Eggs (Empty = All)","ใช้ Essence กับไข่ที่กำหนด (เว้นว่าง = ทั้งหมด)"},
+    {"Open GUI / Colors","เปิดเมนู GUI / สี"},
+    {"Optimizer","ปรับประสิทธิภาพ"},
+    {"Over 100% May Glitch","ตั้งเกิน 100% อาจจะมีบั๊ก"},
+    {"Pass Any Check Or All Checks","ผ่านเงื่อนไขใดเงื่อนไขหนึ่ง หรือทั้งหมด"},
+    {"Paste A Server Job Id...","วาง Server Job ID..."},
+    {"Patrol","ลาดตระเวน (Patrol)"},
+    {"Pause","พัก"},
+    {"Paused during Event","พักผสมระหว่างเล่นอีเวนต์"},
+    {"Performance","ประสิทธิภาพ"},
+    {"Pet Fusion","ผสมสัตว์เป็นไข่"},
+    {"Pet Max Rarity","ระดับหายากสูงสุดของสัตว์เลี้ยง"},
+    {"Pet Sell Value","มูลค่าการขายสัตว์เลี้ยง"},
+    {"Pets","สัตว์เลี้ยง"},
+    {"Pets To Use","สัตว์ที่จะนำมาผสม"},
+    {"Pickaxe","อีเต้อ"},
+    {"Pin Or Unpin The Hit Toggles On Quick Bar 2","ปักหมุดหรือเอาออกสำหรับปุ่มตีบน Quick Bar 2"},
+    {"Place Egg Order","ลำดับการวางไข่"},
+    {"Place Egg Rule","กฎการวางไข่"},
+    {"Place Rarities","ระดับที่จะวางไข่"},
+    {"Place Specific Eggs","วางเฉพาะไข่ที่กำหนด"},
+    {"Places The Reward Eggs From Lab Trades","วางไข่ที่ได้จากการแลกของในแล็บอัตโนมัติ"},
+    {"Play Event","เล่นอีเวนต์"},
+    {"Player","ผู้เล่น"},
+    {"Plot","ฐาน"},
+    {"Predictor","พยากรณ์"},
+    {"Prehistoric","ยุคก่อนประวัติศาสตร์ (Prehistoric)"},
+    {"Press Save Settings after changing options. The next run restores filters and values first, then the saved automation toggles. Settings are stored locally for this account and map.","ตั้งค่าตามต้องการแล้วกดบันทึก รันครั้งถัดไปจะคืนค่าฟิลเตอร์และค่าต่าง ๆ ก่อนเปิดระบบออโต้ตามที่บันทึก เก็บไฟล์ไว้ในเครื่องแยกตามบัญชีและแมพ"},
+    {"Preview 3 Merge materials","ดูสัตว์ 3 ตัวที่จะใช้ Merge"},
+    {"Preview Card","แสดงการ์ดพรีวิว"},
+    {"Priority","ลำดับการทำงาน (Priority)"},
+    {"Progress","คืบหน้า"},
+    {"Quests","เควสต์"},
+    {"Quick & Keys","คีย์ลัด"},
+    {"Radiant Butterfly","ผีเสื้อเรเดียนต์ (Radiant)"},
+    {"Random","สุ่ม"},
+    {"Rare","หายาก (Rare)"},
+    {"Rarest","หายากที่สุดก่อน (Rarest)"},
+    {"Rarity","ระดับความหายาก"},
+    {"Rarity Filter","เลือกระดับ"},
+    {"Rarity To Wait For","ระดับไข่ที่จะรอ"},
+    {"Ready","พร้อม"},
+    {"Rebirth","เกิดใหม่"},
+    {"Rebirths","จำนวนการเกิดใหม่"},
+    {"Refresh","รีเฟรช"},
+    {"Rejoin","เข้าเซิร์ฟเวอร์ใหม่"},
+    {"Rejoin Server","เข้าเซิร์ฟเดิมซ้ำ"},
+    {"Reroll","สุ่มใหม่"},
+    {"Reset","คืนค่าเริ่มต้น"},
+    {"Restore on next run","คืนค่าเมื่อรันครั้งถัดไป"},
+    {"Resume","ทำงานต่อ"},
+    {"Return Home","กลับบ้าน"},
+    {"Rewards","รางวัล"},
+    {"Ride","ขี่"},
+    {"Ride Speed","ความเร็วในการขี่"},
+    {"Roll","สุ่ม"},
+    {"Running","กำลังทำงาน"},
+    {"Safe Zone","พื้นที่ปลอดภัย"},
+    {"Sapphire Butterfly","ผีเสื้อแซฟไฟร์ (Sapphire)"},
+    {"Save","บันทึก"},
+    {"Save Config","บันทึกคอนฟิก"},
+    {"Save Settings","บันทึกค่าปัจจุบัน"},
+    {"Saved for all supported games","บันทึกใช้กับทุกเกมแล้ว"},
+    {"Saved Settings","บันทึกตั้งค่า"},
+    {"Saved settings could not be read; current values kept","อ่านไฟล์ตั้งค่าไม่ได้ ใช้ค่าปัจจุบัน"},
+    {"Saved settings loaded","โหลดค่าที่บันทึกแล้ว"},
+    {"Saved settings restored automatically","คืนค่าที่บันทึกอัตโนมัติแล้ว"},
+    {"Saving unavailable: executor writefile API missing","บันทึกไม่ได้ ตัวรันไม่รองรับ writefile"},
+    {"Scramble Shop Items","ไอเทมที่จะซื้อในร้าน"},
+    {"Scrambler Hold","หน่วงเวลา Scrambler"},
+    {"Search","ค้นหา"},
+    {"Search Eggs...","ค้นหาไข่..."},
+    {"Search...","ค้นหา..."},
+    {"Secret","ซีเคร็ท (Secret)"},
+    {"Sell","ขาย"},
+    {"Sell All","ขายทั้งหมด"},
+    {"Sell Egg Rule","กฎการขายไข่"},
+    {"Sell Eggs At Or Below This Rarity","ขายไข่ที่ระดับเท่านี้หรือต่ำกว่า"},
+    {"Sell Eggs Now","ขายไข่ในกระเป๋าเดี๋ยวนี้"},
+    {"Sell Eggs Worth Less Than This (0 = Off)","ขายไข่ที่มูลค่าน้อยกว่านี้ (0 = ปิด)"},
+    {"Sell Lab Egg Rule","กฎการขายไข่แล็บ"},
+    {"Sell Lab Eggs At Or Below This Rarity (Off = None By Rarity)","ขายไข่แล็บที่ระดับเท่านี้หรือต่ำกว่า (Off = ไม่กรอง)"},
+    {"Sell Lab Eggs Now","ขายไข่แล็บเดี๋ยวนี้"},
+    {"Sell Lab Eggs Worth Less Than This (0 = Off)","ขายไข่แล็บที่มูลค่าน้อยกว่านี้ (0 = ปิด)"},
+    {"Sell Matching Eggs Once","กดขายไข่ที่ตรงเงื่อนไข 1 ครั้ง"},
+    {"Sell Matching Lab Eggs Once","กดขายไข่แล็บที่ตรงเงื่อนไข 1 ครั้ง"},
+    {"Sell Pet Rule","กฎการขายสัตว์เลี้ยง"},
+    {"Sell Pets At Or Below This Rarity","ขายสัตว์ที่ระดับเท่านี้หรือต่ำกว่า"},
+    {"Sell Pets Now","ขายสัตว์เลี้ยงเดี๋ยวนี้"},
+    {"Sell Pets Worth Less Than This (0 = Off)","ขายสัตว์ที่มูลค่าน้อยกว่านี้ (0 = ปิด)"},
+    {"Server","เซิร์ฟเวอร์"},
+    {"Server Hop","ย้ายเซิร์ฟเวอร์"},
+    {"Server Hop Mode","โหมดย้ายเซิร์ฟเวอร์"},
+    {"Settings","ตั้งค่า"},
+    {"Settings saved; will load on next run","บันทึกแล้ว จะโหลดอัตโนมัติเมื่อรันใหม่"},
+    {"Show Eggs Of The Chosen Rarity And Every Rarity Above It","แสดงไข่ระดับนี้และระดับที่สูงกว่าทั้งหมด"},
+    {"Skip Eggs That Already Got Enchanted, Other Mutations Still Get The Essence","ข้ามไข่ที่ติด Enchanted (สายพันธุ์อื่นยังใช้ได้)"},
+    {"Skip Eggs Worth Less Than This (0 = Off)","ข้ามไข่ที่มูลค่าน้อยกว่านี้ (0 = ปิด)"},
+    {"Skip Eggs Worth Less Than This. Drag Or Type 250K, 50M, 1.5B","ข้ามไข่ที่มูลค่าน้อยกว่านี้ พิมพ์ค่าได้เช่น 250k, 50m"},
+    {"Skip Mutated Pets","ข้ามสัตว์กลายพันธุ์"},
+    {"Skip Mutation / Variant","ไม่ใช้สัตว์ติด Mutation / Variant"},
+    {"Smart Trade For Essence","เทรดหา Essence แบบฉลาด"},
+    {"Some saved controls could not be restored; check report","คืนค่าบางรายการไม่สำเร็จ ดูรายงาน"},
+    {"Sort By","จัดเรียงตาม"},
+    {"Spawner","ตัวเรียก"},
+    {"Specific Species To Fuse","สายพันธุ์เฉพาะที่จะผสม"},
+    {"Speed","ความเร็ว"},
+    {"Speed Boost","เพิ่มความเร็ววิ่ง"},
+    {"Stand","ยืนอยู่กับที่ (Stand)"},
+    {"Stand Further Ahead Of The Target (+) Or Closer To Them (-)","ยืนดักหน้าเป้าหมาย (+) หรือยืนใกล้เป้าหมาย (-)"},
+    {"Start","เริ่ม"},
+    {"Status","สถานะ"},
+    {"Stay On Treadmill","อยู่บนลู่วิ่งตลอดเวลา"},
+    {"Steal Eggs Of The Chosen Rarity And Every Rarity Above It","ขโมยไข่ระดับนี้และระดับที่สูงกว่าทั้งหมด"},
+    {"Steal Filter Eggs","ขโมยไข่ตามเงื่อนไข"},
+    {"Steal Missing Index Eggs","ขโมยไข่สมุดสะสมที่ยังไม่มี"},
+    {"Steal Missing Lab Eggs","ขโมยไข่แล็บที่ยังไม่มี"},
+    {"Steal Priority","ลำดับความสำคัญขโมย"},
+    {"Steal Then Hop","ขโมยก่อนแล้วค่อยย้าย"},
+    {"Stop","หยุด"},
+    {"Stop Event / Fusion","หยุดอีเวนต์ / ผสมสัตว์"},
+    {"Stopped","หยุดแล้ว"},
+    {"Strip Shadows, Textures And Effects For The Highest Fps","ลบเงา พื้นผิว และเอฟเฟกต์เพื่อให้ได้ FPS สูงสุด"},
+    {"Swap Two Weapons","สลับอาวุธสองชิ้น"},
+    {"Swap Weaker Pets","สลับตัวอ่อนออก"},
+    {"Sync With Auto Steal Filters","ซิงค์ตัวกรองกับออโต้ขโมยไข่"},
+    {"Take Out Pets That Can'T Make A Set","ดึงสัตว์ที่ใส่ไปแล้วออก หากหามาผสมได้ไม่ครบชุด"},
+    {"Tap Speed","ความเร็วในการคลิก"},
+    {"Tapping","การคลิก"},
+    {"Target Areas","พื้นที่เป้าหมาย"},
+    {"Target Specific Eggs","เป้าหมายเฉพาะไข่"},
+    {"Task Priority","ลำดับการทำงาน (Task Priority)"},
+    {"Teleport","วาร์ป"},
+    {"Teleport Home","วาร์ปกลับบ้าน"},
+    {"Teleport To Egg","วาร์ปไปหาไข่ (Teleport To Egg)"},
+    {"Theme","ธีม"},
+    {"These Eggs Are Never Sold","ไข่ในรายชื่อนี้จะไม่ถูกขายเด็ดขาด"},
+    {"These Pets Are Never Sold","สัตว์ในรายชื่อนี้จะไม่ถูกขายเด็ดขาด"},
+    {"Titan Temple","วิหารไททัน (Titan Temple)"},
+    {"Toggle UI","แสดง / ซ่อนหน้าต่าง"},
+    {"Token reserve","Tokens สำรอง"},
+    {"Top Goes First. A Carried Egg Is Always Delivered First.","บนสุดทำก่อน (ถ้าถือไข่อยู่ จะเอาไปส่งก่อนเสมอ)"},
+    {"Total / S","ยอดรวม / วิ"},
+    {"Trade Up Tiers","ระดับการเทรดอัป"},
+    {"Turn It On To Start Applying Scrambled","เปิดเพื่อเริ่มใช้ Scrambled ทันที"},
+    {"Turn On","เปิดใช้งาน (Turn On)"},
+    {"Turn On Auto Hop To Start Hunting","เปิดออโต้ย้ายเซิร์ฟเพื่อเริ่มตามล่า"},
+    {"Tween Speed","ความเร็วการบิน (Tween)"},
+    {"Unable to save settings; check report","บันทึกตั้งค่าไม่สำเร็จ ดูรายงาน"},
+    {"Uncommon","ไม่ธรรมดา (Uncommon)"},
+    {"Unequip","ถอดออก"},
+    {"Unfavorite All Equipped Pets Once","ปลดล็อกหัวใจสัตว์ทุกตัวที่กำลังใส่ 1 ครั้ง"},
+    {"Unfavorite Equipped Now","ปลดล็อกตัวที่ใส่เดี๋ยวนี้"},
+    {"Unfavorite Equipped Pets Not In The Rules","ปลดล็อกหัวใจสัตว์ที่ใส่อยู่ ถ้าไม่ตรงตามกฎที่ตั้งไว้"},
+    {"Unload","ปิดสคริปต์"},
+    {"Unload Script","ปิดสคริปต์"},
+    {"Upgrade","อัปเกรด"},
+    {"Upgrades","อัปเกรด"},
+    {"Use 6 hex digits, e.g. #75CEFF","ใส่รหัสสี 6 หลัก เช่น #75CEFF"},
+    {"Use animals on owned plot","รวมสัตว์ที่วางบนฐานตัวเอง"},
+    {"Using It With Invisibility May Cause Some Bugs.","การเปิดใช้ร่วมกับระบบล่องหน (Invisibility) อาจทำให้เกิดบั๊กบางอย่างได้"},
+    {"Utility","อรรถประโยชน์"},
+    {"Value Check (0 = Skip)","ตรวจสอบมูลค่า (0 = ข้าม)"},
+    {"Visuals","การแสดงผล"},
+    {"Waiting for attackable boss phase","รอช่วงที่ตีบอสได้"},
+    {"Waiting for Auto Pickup to finish delivery","รอ Auto Pickup ส่งสัตว์เข้าเซฟโซน"},
+    {"Waiting for boss to spawn or load","รอบอสเกิดหรือโหลด"},
+    {"Waiting for game to confirm Hell entry","ถึงประตูแล้ว รอเกมยืนยันเข้า Hell"},
+    {"Waiting for Hell doorway to load","รอประตู Hell โหลด"},
+    {"Waiting for Hell event","รออีเวนต์ Hell เปิด"},
+    {"Walk Speed","ความเร็วในการเดิน"},
+    {"Walkspeed","ความเร็วในการเดิน"},
+    {"Warning","คำเตือน (Warning)"},
+    {"Webhook","Webhook"},
+    {"Webhook URL","URL ของ Webhook"},
+    {"Which Checks Must Pass To Sell","เลือกเงื่อนไขที่จะให้ขาย"},
+    {"Which Egg Gets Mutated First","ไข่ใบไหนจะได้รับการกลายพันธุ์ก่อน"},
+    {"Which Egg Gets The Consumable First","ไข่ใบไหนจะได้ไอเทมก่อน"},
+    {"Which Egg Gets The Essence First","ไข่ใบไหนจะได้ Essence ก่อน"},
+    {"Wisp Companion","สัตว์เลี้ยงวิญญาณ (Wisp)"},
+    {"Worlds","โลก"},
+    {"Zone Filter","เลือกด่าน"},
+    {"Zones","โซน"},
+    {"Zones Where Instant Steal V2 Is Used","โซนที่เปิดใช้งานระบบขโมยไข่ทันที V2"},
+}
+
+local thai,english={},{}
+for _,pair in ipairs(phrasePairs)do thai[pair[1]:lower()]=pair[2];english[pair[2]]=english[pair[2]]or pair[1]end
+local localized={}
+local function translate(text)
+    if type(text)~="string"or text==""then return text end
+    if settings.Language=="EN"then return english[text]or text end
+    local clean=text:find("<",1,true)and text:gsub("<[^>]+>","")or text
+    local replacement=thai[clean:lower()]
+    if replacement then return replacement end
+    for _,pair in ipairs({{"Status: ","สถานะ: "},{"GUI size: ","ขนาด GUI: "},{"Selected: ","เลือก: "},
+        {"Loading ","กำลังโหลด "},{"Downloading ","กำลังดาวน์โหลด "}})do
+        if clean:sub(1,#pair[1]):lower()==pair[1]:lower()then return pair[2]..clean:sub(#pair[1]+1)end
+    end
+    return text
+end
+local function clearOverlay(node,record)
+    for _,link in ipairs(record.StyleLinks)do link:Disconnect()end
+    table.clear(record.StyleLinks)
+    if record.Overlay then
+        pcall(function()node.TextTransparency=record.Transparency end)
+        record.Overlay:Destroy();record.Overlay=nil
+    end
+end
+local function localize(node)
+    if localized[node]or node:GetAttribute("DevilLocalizationOverlay")then return end
+    if not node:IsA("TextLabel")and not node:IsA("TextButton")then return end
+    local record={Links={},StyleLinks={}}
+    localized[node]=record
+    function record.Update()
+        if controller.Stopped or not node.Parent then return end
+        local value=translate(node.Text)
+        if value==""then clearOverlay(node,record);return end
+        if not record.Overlay then
+            if node:FindFirstChildOfClass("UIListLayout")or node:FindFirstChildOfClass("UIGridLayout")then return end
+            local overlay=Instance.new("TextLabel")
+            overlay.Name="DevilTranslatedLabel";overlay:SetAttribute("DevilLocalizationOverlay",true)
+            overlay.BackgroundTransparency=1;overlay.BorderSizePixel=0;overlay.Active=false;overlay.Selectable=false
+            overlay.Position=UDim2.fromOffset(0,0);overlay.Size=UDim2.fromScale(1,1)
+            -- Gradients live only on transparent text, never on a button's background.
+            local function sync(key)pcall(function()
+                if key=="TextColor3"then overlay[key]=white
+                elseif key=="TextStrokeTransparency"then overlay[key]=1
+                else overlay[key]=node[key]end
+            end)end
+            for _,key in ipairs({"Font","FontFace","TextSize","TextScaled","TextWrapped","TextXAlignment","TextYAlignment",
+                "TextColor3","TextStrokeColor3","TextStrokeTransparency","RichText","LineHeight","TextTruncate"})do
+                sync(key);keep(node:GetPropertyChangedSignal(key),function()sync(key)end,record.StyleLinks)
+            end
+            local tone=Instance.new("UIGradient");tone.Name="DevilTextTone"
+            tone:SetAttribute("DevilLocalizationOverlay",true)
+            tone.Color=ColorSequence.new(palette.Blue,white);tone.Rotation=0;tone.Parent=overlay
+            local padding=node:FindFirstChildOfClass("UIPadding")
+            if padding then
+                local clone=Instance.new("UIPadding");clone:SetAttribute("DevilLocalizationOverlay",true)
+                for _,key in ipairs({"PaddingLeft","PaddingRight","PaddingTop","PaddingBottom"})do
+                    clone[key]=padding[key]
+                    keep(padding:GetPropertyChangedSignal(key),function()clone[key]=padding[key]end,record.StyleLinks)
+                end
+                clone.Parent=overlay
+            end
+            local function layer()overlay.ZIndex=(node.ZIndex or 1)+1 end
+            layer();keep(node:GetPropertyChangedSignal("ZIndex"),layer,record.StyleLinks)
+            record.Transparency=tonumber(node.TextTransparency)or 0
+            overlay.TextTransparency=math.clamp(record.Transparency,0,1)^2
+            record.Overlay=overlay
+            node.TextTransparency=1
+            keep(node:GetPropertyChangedSignal("TextTransparency"),function()
+                if node.TextTransparency==1 then return end
+                record.Transparency=node.TextTransparency;overlay.TextTransparency=math.clamp(record.Transparency,0,1)^2;node.TextTransparency=1
+            end,record.StyleLinks)
+            overlay.Parent=node
+        end
+        -- Inline font colors must not multiply or cover the shared text gradient.
+        record.Overlay.Text=node.RichText and value:gsub('(<font[^>]-)%s+[cC][oO][lL][oO][rR]%s*=%s*["\'][^"\']+["\']',"%1")or value
+    end
+    keep(node:GetPropertyChangedSignal("Text"),record.Update,record.Links)
+    keep(node.ChildAdded,function(child)
+        if child:IsA("UIListLayout")or child:IsA("UIGridLayout")then clearOverlay(node,record)
+        elseif child:IsA("UIPadding")then clearOverlay(node,record);record.Update()end
+    end,record.Links)
+    keep(node.Destroying,function()
+        for _,link in ipairs(record.Links)do link:Disconnect()end
+        clearOverlay(node,record);localized[node]=nil
+    end,record.Links)
+    record.Update()
+end
+
+-- END SHARED LOCALIZATION
+local function brightness(c)return math.max(c.R,c.G,c.B)end
+local function saturation(c)return math.max(c.R,c.G,c.B)-math.min(c.R,c.G,c.B)end
+local function title(text)
+    text=tostring(text):gsub("<[^>]+>",""):upper()
+    return text=="DEVIL HUB"or text:sub(1,12)=="DEVIL HUB / "
+end
+local function logo(node)
+    local name=node.Name:lower()
+    local image=node.Image
+    return name=="logo"or name=="brandlogo"or name=="devillogo"or
+        (type(image)=="string"and(image:find("devil-logo",1,true)or image:find("DevilHub_Silver",1,true)or
+        (scope.DevilHubSilverLogo and image==scope.DevilHubSilverLogo)))
+end
+local function launcher(node)
+    local current=node
+    while current do
+        local name=current.Name:lower()
+        if name:find("launcher",1,true)or name:find("floating",1,true)or name:find("leftcenter",1,true)
+            or name:find("guitoggle",1,true)or name:find("hubtoggle",1,true)then return true end
+        if current:IsA("GuiButton")and current.Parent and current.Parent:IsA("ScreenGui")then
+            for _,child in ipairs(current:GetChildren())do
+                if(child:IsA("ImageLabel")or child:IsA("ImageButton"))and logo(child)then return true end
+            end
+        end
+        if current:IsA("ScreenGui")then break end
+        current=current.Parent
+    end
+    return false
+end
+local function brandImage(node)
+    if not node:IsA("ImageLabel")and not node:IsA("ImageButton")then return false end
+    local image=node.Image
+    if type(image)~="string"or image==""then return false end
+    return image:find("devil-logo",1,true)~=nil or image:find("DevilHub_Silver",1,true)~=nil
+        or scope.DevilHubSilverLogo~=nil and image==scope.DevilHubSilverLogo
+end
+local function chromeImage(node)
+    if logo(node)then return true end
+    local image=tostring(node.Image):lower()
+    local name=node.Name:lower()
+    if image:find("rbxthumb://",1,true)or image:find("headshot",1,true)or name:find("avatar",1,true)
+        or name:find("thumbnail",1,true)or name:find("petimage",1,true)or name:find("itemimage",1,true)
+        or name:find("eggimage",1,true)or name=="backgroundimage"then return false end
+    local current=node.Parent
+    while current and not current:IsA("ScreenGui")do
+        local key=current.Name:lower()
+        if key=="inventory"or key=="petimage"or key=="itemimage"or key=="eggimage"or key=="thumbnail"
+            or key=="itemcard"or key=="petcard"or key=="eggcard"or key=="avatar"or key=="viewport"then return false end
+        current=current.Parent
+    end
+    -- Libraries frequently leave navigation, checkmarks and action glyphs unnamed.
+    return true
+end
+local function toggleOn(track,thumb)
+    local width=track.Size.X.Offset
+    local x=thumb.Position.X.Scale*width+thumb.Position.X.Offset
+    local center=x+(.5-thumb.AnchorPoint.X)*thumb.Size.X.Offset
+    return center>width*.5
+end
+local function glyphFrame(node)
+    if not node:IsA("Frame")or not node.Parent then return false end
+    if node.Name=="Arm"and node.Parent.Name=="Caret"then return true end
+    if not node.Parent:IsA("GuiButton")then return false end
+    local size=node.Size
+    return size.X.Scale==0 and size.Y.Scale==0 and size.X.Offset>0 and size.Y.Offset>0
+        and math.max(size.X.Offset,size.Y.Offset)<=24 and math.min(size.X.Offset,size.Y.Offset)<=4
+end
+local function waveHost(node)
+    local parent=node.Parent
+    while parent and not parent:IsA("ScreenGui")do
+        if parent.Name=="Island"and parent:IsA("CanvasGroup")
+            or parent.Name=="IslandBubble"and parent:IsA("GuiButton")then return true end
+        parent=parent.Parent
+    end
+    return false
+end
+local function waveBar(node)
+    -- OuroFlow's four animated bars are unnamed. Match their fixed horizontal
+    -- geometry inside the native mini bar, never their animated height/color.
+    if not node:IsA("Frame")or not node.Parent or not node.Parent:IsA("Frame")then return false end
+    local size,position,anchor=node.Size,node.Position,node.AnchorPoint
+    local group=node.Parent.Size
+    if size.X.Scale~=0 or size.X.Offset~=3 or size.Y.Scale~=0
+        or position.X.Scale~=0 or position.X.Offset<0 or position.X.Offset>15 or position.X.Offset%5~=0
+        or position.Y.Scale~=.5 or position.Y.Offset~=0 or anchor.X~=0 or anchor.Y~=.5
+        or group.X.Scale~=0 or group.X.Offset~=18 or group.Y.Scale~=0 or group.Y.Offset~=16 then return false end
+    return waveHost(node.Parent)
+end
+local function screenLayer(node)
+    if not node or not node:IsA("GuiObject")then return end
+    local current=node
+    while current and current:IsA("GuiObject")do
+        local parent=current.Parent
+        if not parent then return end
+        local name=current.Name:lower()
+        if name=="window"or name=="mainwindow"or name=="root"then return end
+        local size=current.Size
+        -- Desktop libraries also size input planes/dimmers in viewport pixels.
+        -- Include offsets and wait for the screen's real dimensions when needed.
+        local parentSize=parent.AbsoluteSize
+        local actual=current.AbsoluteSize
+        local width=parentSize.X>0 and math.max(size.X.Scale+size.X.Offset/parentSize.X,actual.X/parentSize.X)or size.X.Scale
+        local height=parentSize.Y>0 and math.max(size.Y.Scale+size.Y.Offset/parentSize.Y,actual.Y/parentSize.Y)or size.Y.Scale
+        if width<.85 or height<.85 then return end
+        if parent:IsA("ScreenGui")then
+            if launcher(current)or brandImage(current)then return end
+            return parent
+        end
+        current=parent
+    end
+end
+local function breakDialog(node)
+    -- Keep a recognized bridge dialog bound during viewport/size transitions.
+    local screen=screenLayer(node)or dialogs[node]
+    if screen and node.Parent==screen and node:IsA("TextButton")and node.ZIndex>=8000
+        and screen:GetAttribute("DevilBreakFrontend")==true then return screen end
+end
+local function menuSurface(node)
+    if not node:IsA("GuiObject")then return false end
+    local name=node.Name:lower()
+    return node:IsA("GuiButton")or name:find("dropdown",1,true)or name:find("option",1,true)
+        or name:find("menu",1,true)or name:find("select",1,true)or name:find("combobox",1,true)or name:find("surface",1,true)
+end
+local function imageSurface(node)
+    if not node:IsA("ImageLabel")and not node:IsA("ImageButton")then return false end
+    if logo(node)or not chromeImage(node)and node.Name:lower()~="backgroundimage"then return false end
+    local name=node.Name:lower()
+    if name:find("background",1,true)or name:find("surface",1,true)or name:find("backdrop",1,true)then return true end
+    local parent=node.Parent
+    if not parent then return false end
+    if node:IsA("ImageButton")and(node:FindFirstChildWhichIsA("TextLabel")or node:FindFirstChild("Caret"))then return true end
+    local size=node.Size
+    return size.X.Scale>=.7 and size.Y.Scale>=.7 and(menuSurface(parent)or node.ScaleType==Enum.ScaleType.Slice)
+end
+local function target(node,key,source)
+    local name=node.Name:lower()
+    if key=="Visible"and name=="devillanguagebutton"then return false
+    elseif key=="Visible"and dialogs[node]then
+        local root=windowRoot(dialogs[node])
+        return source and(not root or root.Visible)
+    elseif(key=="BackgroundTransparency"or key=="BackgroundColor3"or key=="ImageColor3")and screenLayer(node)then
+        -- Screen dimmers and input-catching planes are not menu cards.
+        return source
+    elseif key=="BackgroundTransparency"then
+        if waveTones[node]then return source end
+        if inputHosts[node]then return .14 end
+        if node:IsA("TextBox")then return source>=.98 and source or .14 end
+        if node:IsA("GuiButton")and(launcher(node)or brandImage(node))then return 0 end
+        if source>=.98 then return source end
+        if menuSurface(node)or imageSurface(node)then return .14 end
+        return math.max(source,launcher(node)and 0 or .14)
+    elseif key=="PlaceholderText"then return translate(source)
+    elseif key=="PlaceholderColor3"then return palette.Placeholder
+    elseif key=="TextColor3"then
+        if node:IsA("TextBox")then return white end
+        if title(node.Text)then return white end
+        return (saturation(source)>.1 or brightness(source)<.8)and palette.Accent or white
+    elseif key=="Text"then
+        return (source:gsub('(<font[^>]-color%s*=%s*["\'])[^"\']+(["\'])',"%1"..settings.Accent.."%2"))
+    elseif key=="TextStrokeColor3"then return palette.Background
+    elseif key=="ImageColor3"then
+        if imageSurface(node)then return palette.Background end
+        if not chromeImage(node)then return source end
+        if logo(node)then return white end
+        if name:find("shadow",1,true)then return palette.Background end
+        if saturation(source)<.04 and brightness(source)>.95 then return white end
+        return palette.Accent
+    elseif key=="ScrollBarImageColor3"then return palette.Accent
+    elseif key=="Color"and node:IsA("UIStroke")then
+        local parent=node.Parent
+        if parent and(parent:IsA("TextLabel")or parent:IsA("TextButton"))and node.ApplyStrokeMode==Enum.ApplyStrokeMode.Contextual then return palette.Background end
+        return palette.Accent
+    elseif key=="Color"and node:IsA("UIGradient")then
+        local parent=node.Parent
+        if screenLayer(parent)then return source end
+        if parent and(parent:IsA("TextBox")or inputHosts[parent])then return ColorSequence.new(white)end
+        if parent and(parent:IsA("ImageLabel")or parent:IsA("ImageButton"))then
+            if imageSurface(parent)then return ColorSequence.new(white)end
+            if not chromeImage(parent)then return source end
+            return logo(parent)and ColorSequence.new(white)or ColorSequence.new(white,palette.Accent)
+        end
+        if parent and parent:IsA("TextLabel")and parent.BackgroundTransparency>=.98 then return ColorSequence.new(palette.Blue,white)end
+        return ColorSequence.new(palette.Background,palette.Surface2)
+    elseif key=="BackgroundColor3"then
+        if waveTones[node]then return white end
+        if node:IsA("TextBox")or inputHosts[node]then return palette.Input end
+        if launcher(node)or node:IsA("ImageButton")and brandImage(node)then return Color3.fromRGB(0,0,0)end
+        if toggleTracks[node]then return toggleOn(node,toggleTracks[node])and palette.Accent or palette.Off end
+        if toggleThumbs[node]then return toggleOn(toggleThumbs[node],node)and white or palette.Muted end
+        if glyphFrame(node)then return palette.Accent end
+        if node.Parent and node.Parent:IsA("ScreenGui")or name=="root"or name=="mainwindow"then return palette.Background end
+        -- A dropdown named DropdownToggle is a menu surface, not a switch track.
+        if node:IsA("Frame")and(name=="switch"or name=="toggletrack"or name=="switchtrack")then
+            return saturation(source)>.08 and brightness(source)>.35 and palette.Accent or palette.Off
+        end
+        if name:find("tab",1,true)or name:find("nav",1,true)or name:find("option",1,true)or name:find("group",1,true)or name:find("section",1,true)or name:find("panel",1,true)or node:IsA("TextButton")then return palette.Surface2 end
+        return brightness(source)>.45 and saturation(source)>.15 and palette.Surface2 or palette.Background
+    end
+    return source
+end
+local function applyProperty(node,state,key)
+    if controller.Stopped or not node.Parent then return end
+    local value=target(node,key,state.Source[key])
+    state.Writing[key]=true
+    if node[key]~=value then node[key]=value end
+    -- Roblox stores some numeric/color properties at a lower precision.
+    state.Applied[key]=node[key]
+    state.Writing[key]=nil
+end
+local function observe(node,state,key)
+    state.Source[key]=node[key]
+    applyProperty(node,state,key)
+    keep(node:GetPropertyChangedSignal(key),function()
+        if controller.Stopped or state.Writing[key]or node[key]==state.Applied[key]then return end
+        state.Source[key]=node[key]
+        applyProperty(node,state,key)
+    end,state.Links)
+end
+local function inspectWave(node,state)
+    if waveTones[node]or not waveBar(node)then return end
+    local tone=Instance.new("UIGradient")
+    tone.Name="DevilWaveTone";tone:SetAttribute("DevilBlueSettings",true)
+    tone.Color=ColorSequence.new(palette.Blue,white);tone.Rotation=90
+    waveTones[node]=tone;tone.Parent=node
+    applyProperty(node,state,"BackgroundColor3")
+    applyProperty(node,state,"BackgroundTransparency")
+end
+refreshLayers=function(screen)
+    for node,parent in pairs(dialogs)do
+        if parent==screen and states[node]then applyProperty(node,states[node],"Visible")end
+    end
+end
+local function inspectLayer(node,state)
+    local screen=breakDialog(node)
+    if screen then
+        dialogs[node]=screen
+        if state.Source.Visible==nil then observe(node,state,"Visible")else applyProperty(node,state,"Visible")end
+    elseif dialogs[node]then
+        dialogs[node]=nil
+        if state.Source.Visible~=nil then applyProperty(node,state,"Visible")end
+    end
+    for _,key in ipairs({"BackgroundTransparency","BackgroundColor3","ImageColor3"})do
+        if state.Source[key]~=nil then applyProperty(node,state,key)end
+    end
+end
+local function refreshPlane(node,state,layoutChanged)
+    local plane=screenLayer(node)
+    local changed=state.Plane~=plane;state.Plane=plane
+    inspectLayer(node,state)
+    if changed or plane and layoutChanged then
+        -- A parent-first factory or viewport resize can change classification
+        -- after children were styled. Restore those children's native surfaces too.
+        for _,child in ipairs(node:GetDescendants())do
+            local childState=states[child]
+            if childState then
+                if child:IsA("GuiObject")then inspectLayer(child,childState)
+                elseif child:IsA("UIGradient")then applyProperty(child,childState,"Color")end
+            end
+        end
+    end
+end
+local function inspectInput(box)
+    if not box:IsA("TextBox")then return end
+    local parent=box.Parent
+    if not parent or not(parent:IsA("Frame")or parent:IsA("ImageLabel"))or parent.Parent==nil or parent.Parent:IsA("ScreenGui")then return end
+    local size=parent.Size
+    if size.Y.Scale~=0 or size.Y.Offset<18 or size.Y.Offset>64 or box.Size.Y.Scale<.7 then return end
+    inputHosts[parent]=true
+    local state=states[parent]
+    if state then for _,key in ipairs({"BackgroundColor3","BackgroundTransparency"})do applyProperty(parent,state,key)end end
+    local gradient=parent:FindFirstChildOfClass("UIGradient")
+    if gradient and states[gradient]then applyProperty(gradient,states[gradient],"Color")end
+end
+local function inspectToggle(track)
+    if not track or toggleTracks[track]or not track:IsA("GuiObject")then return end
+    local size=track.Size
+    local w,h=size.X.Offset,size.Y.Offset
+    if size.X.Scale~=0 or size.Y.Scale~=0 or w<28 or w>56 or h<14 or h>28 or w/h<1.3 or w/h>2.8 then return end
+    local name=track.Name:lower()
+    if not(track.Parent and track.Parent:IsA("GuiButton"))and not name:find("toggle",1,true)and not name:find("switch",1,true)then return end
+    for _,thumb in ipairs(track:GetChildren())do
+        if thumb:IsA("Frame")or thumb:IsA("ImageLabel")or thumb:IsA("ImageButton")then
+            local ts,p,anchor=thumb.Size,thumb.Position,thumb.AnchorPoint
+            local corner=thumb:FindFirstChildOfClass("UICorner")
+            local thumbName=thumb.Name:lower()
+            local rounded=corner and(corner.CornerRadius.Scale>=.5 or corner.CornerRadius.Offset>=math.min(ts.X.Offset,ts.Y.Offset)/2)
+            local handle=rounded or thumbName=="thumb"or thumbName=="knob"
+            if handle and ts.X.Scale==0 and ts.Y.Scale==0 and ts.X.Offset>=8 and ts.X.Offset<=h+4 and ts.Y.Offset>=8
+                and math.abs(ts.X.Offset-ts.Y.Offset)<=6 and anchor.Y==.5 and p.Y.Scale==.5
+                and(p.X.Scale==0 or p.X.Scale==1)then
+                toggleTracks[track]=thumb;toggleThumbs[thumb]=track
+                local function sync()
+                    for _,part in ipairs({track,thumb})do
+                        local state=states[part]
+                        if state and state.Source.BackgroundColor3 then applyProperty(part,state,"BackgroundColor3")end
+                    end
+                end
+                for _,key in ipairs({"Position","Size","AnchorPoint"})do keep(thumb:GetPropertyChangedSignal(key),sync)end
+                keep(thumb.Destroying,function()toggleTracks[track]=nil;toggleThumbs[thumb]=nil end)
+                sync();return
+            end
+        end
+    end
+end
+local function patch(node)
+    if node:GetAttribute("DevilLocalizationOverlay")or node:GetAttribute("DevilBlueSettings")then return end
+    localize(node)
+    if states[node]then inspectLayer(node,states[node]);return end
+    local keys={}
+    if node:IsA("GuiObject")then
+        table.insert(keys,"BackgroundColor3");table.insert(keys,"BackgroundTransparency")
+        if node.Name=="DevilLanguageButton"then table.insert(keys,"Visible")end
+        if node:IsA("TextLabel")or node:IsA("TextButton")or node:IsA("TextBox")then
+            table.insert(keys,"TextColor3")
+            table.insert(keys,"TextStrokeColor3")
+            if node.RichText then table.insert(keys,"Text")end
+        end
+        if node:IsA("TextBox")then table.insert(keys,"PlaceholderText");table.insert(keys,"PlaceholderColor3")end
+        if node:IsA("ScrollingFrame")then table.insert(keys,"ScrollBarImageColor3")end
+        if node:IsA("ImageLabel")or node:IsA("ImageButton")then
+            if chromeImage(node)or imageSurface(node)then table.insert(keys,"ImageColor3")end
+        end
+    elseif node:IsA("UIStroke")or node:IsA("UIGradient")then table.insert(keys,"Color")end
+    if #keys==0 then
+        if node:IsA("UICorner")then
+            local function checkCorner()if node.Parent then inspectToggle(node.Parent.Parent)end end
+            checkCorner();keep(node:GetPropertyChangedSignal("CornerRadius"),checkCorner)
+        end
+        return
+    end
+    local state={Source={},Applied={},Writing={},Links={}};states[node]=state
+    controller.Report.nodes+=1
+    for _,key in ipairs(keys)do observe(node,state,key)end
+    if node:IsA("Frame")and waveHost(node)then
+        inspectWave(node,state)
+        -- Instance factories may parent before assigning geometry. One deferred
+        -- probe handles that order without subscribing to per-frame Size writes.
+        if not waveTones[node]then
+            task.defer(function()if not controller.Stopped and node.Parent and states[node]==state then inspectWave(node,state)end end)
+        end
+    end
+    if node:IsA("GuiObject")then
+        state.Plane=screenLayer(node);inspectLayer(node,state)
+    end
+    if node:IsA("GuiButton")or node:IsA("GuiObject")and node.Parent and node.Parent:IsA("ScreenGui")then
+        for _,key in ipairs({"Size","AbsoluteSize","ZIndex","Parent","Name"})do
+            keep(node:GetPropertyChangedSignal(key),function()refreshPlane(node,state,key=="AbsoluteSize")end,state.Links)
+        end
+    end
+    inspectInput(node)
+    inspectToggle(node);inspectToggle(node.Parent)
+    if toggleThumbs[node]then applyProperty(node,state,"BackgroundColor3")end
+    keep(node.Destroying,function()
+        for _,link in ipairs(state.Links)do link:Disconnect()end
+        dialogs[node]=nil;waveTones[node]=nil;states[node]=nil
+    end,state.Links)
+    if node:IsA("ImageLabel")or node:IsA("ImageButton")then
+        keep(node:GetPropertyChangedSignal("Size"),function()
+            for _,key in ipairs({"ImageColor3","BackgroundTransparency"})do
+                if state.Source[key]~=nil then applyProperty(node,state,key)end
+            end
+        end,state.Links)
+        keep(node:GetPropertyChangedSignal("Image"),function()
+            if(chromeImage(node)or imageSurface(node))and state.Source.ImageColor3==nil then observe(node,state,"ImageColor3")
+            elseif state.Source.ImageColor3~=nil then applyProperty(node,state,"ImageColor3")end
+            for _,key in ipairs({"BackgroundColor3","BackgroundTransparency"})do
+                if state.Source[key]~=nil then applyProperty(node,state,key)end
+            end
+            local parent=node.Parent
+            while parent and not parent:IsA("ScreenGui")do
+                local parentState=states[parent]
+                if parentState then for _,key in ipairs({"BackgroundColor3","BackgroundTransparency"})do
+                    if parentState.Source[key]~=nil then applyProperty(parent,parentState,key)end
+                end end
+                parent=parent.Parent
+            end
+        end,state.Links)
+    end
+end
+windowRoot=function(screen)
+    if screen.Name=="DevilHubLoading"then return end
+    local existing=roots[screen]
+    local existingName=existing and existing.Name:lower()
+    if existing and existing.Parent==screen and(existingName=="window"or existingName=="mainwindow"or existingName=="root")then return existing end
+    local root,area
+    for _,child in ipairs(screen:GetChildren())do if child:IsA("GuiObject")and not child:GetAttribute("DevilBlueSettings")and not child:IsA("GuiButton")then
+        local name=child.Name:lower()
+        local size=child.AbsoluteSize;local nextArea=size.X*size.Y
+        if nextArea>40000 and(name=="window"or name=="mainwindow"or name=="root")then roots[screen]=child;return child end
+        if nextArea>40000 and not screenLayer(child)and name~="island"and name~="notifications"and name~="tooltip"and not name:find("ghost",1,true)
+            and not launcher(child)and(not area or nextArea>area)then root,area=child,nextArea end
+    end end
+    if existing and existing.Parent==screen and not screenLayer(existing)then root=existing end
+    roots[screen]=root
+    return root
+end
+createUI=function(screen)
+    if screen.Name=="DevilHubLoading"then return end
+    local root=windowRoot(screen)
+    if not root then return end
+    local previous=ui[screen]
+    if previous and previous.Root==root and previous.Dock and previous.Dock.Parent then previous.Reflow();return end
+    local sidebar,tabs
+    for _,node in ipairs(root:GetDescendants())do
+        if node.Name=="Sidebar"and node:IsA("GuiObject")then
+            local list=node:FindFirstChild("Tabs")or node:FindFirstChild("TabList")
+            if list and list:IsA("GuiObject")then sidebar,tabs=node,list;break end
+        end
+    end
+    if previous then
+        if previous.Root==root and previous.Dock==sidebar then previous.Reflow();return end
+        previous.Frame:Destroy()
+    end
+    local panelLinks,geometry={},{}
+    local reflow
+    local function make(class,props,parent)
+        local node=Instance.new(class);node:SetAttribute("DevilBlueSettings",true)
+        for key,value in pairs(props)do node[key]=value end;node.Parent=parent;return node
+    end
+    local function reserve(node,key,transform)
+        geometry[node]=geometry[node]or{}
+        if geometry[node][key]then return end
+        local record={Source=node[key]};geometry[node][key]=record
+        local function apply()
+            record.Applied=transform(record.Source)
+            if node[key]~=record.Applied then node[key]=record.Applied end
+        end
+        keep(node:GetPropertyChangedSignal(key),function()
+            if node[key]==record.Applied then return end
+            record.Source=node[key];apply()
+            if reflow then reflow()end
+        end,panelLinks)
+        apply()
+    end
+    local rowHeight=40
+    local host=make("Frame",{Name="DevilLanguageSelector",BackgroundTransparency=1,BorderSizePixel=0,Size=UDim2.new(1,-16,0,32),
+        Position=UDim2.fromOffset(8,0),ZIndex=100},sidebar or root)
+    reflow=function()
+        if sidebar then
+            reserve(tabs,"Position",function(p)return UDim2.new(p.X.Scale,p.X.Offset,p.Y.Scale,p.Y.Offset+rowHeight)end)
+            reserve(tabs,"Size",function(s)return UDim2.new(s.X.Scale,s.X.Offset,s.Y.Scale,s.Y.Offset-rowHeight)end)
+            local original=geometry[tabs].Position.Source
+            host.Position=UDim2.new(0,8,original.Y.Scale,original.Y.Offset+2)
+        else
+            -- Reserve an actual row for libraries without a Sidebar; no overlay on native controls.
+            host.Position=UDim2.fromOffset(12,4);host.Size=UDim2.new(1,-24,0,32)
+            for _,child in ipairs(root:GetChildren())do
+                if child:IsA("GuiObject")and not child:GetAttribute("DevilBlueSettings")and not launcher(child)then
+                    reserve(child,"Position",function(p)return UDim2.new(p.X.Scale,p.X.Offset,p.Y.Scale,p.Y.Offset+rowHeight*(1-p.Y.Scale))end)
+                    reserve(child,"Size",function(s)return UDim2.new(s.X.Scale,s.X.Offset,s.Y.Scale,s.Y.Offset-rowHeight*s.Y.Scale)end)
+                end
+            end
+        end
+    end
+    local button=make("TextButton",{Name="LanguageSelect",Size=sidebar and UDim2.fromScale(1,1)or UDim2.fromOffset(112,32),
+        AnchorPoint=sidebar and Vector2.new(0,0)or Vector2.new(1,0),Position=sidebar and UDim2.fromOffset(0,0)or UDim2.fromScale(1,0),
+        BorderSizePixel=0,AutoButtonColor=false,Text="",BackgroundColor3=palette.Surface,BackgroundTransparency=1,
+        Font=Enum.Font.GothamSemibold,TextSize=13,ZIndex=101},host)
+    make("UICorner",{CornerRadius=UDim.new(0,8)},button)
+    local caption=make("TextLabel",{Name="LanguageCaption",BackgroundTransparency=1,BorderSizePixel=0,
+        Size=UDim2.new(1,-20,1,0),TextColor3=white,Font=Enum.Font.GothamSemibold,TextSize=13,ZIndex=102},button)
+    make("UIGradient",{Color=ColorSequence.new(palette.Blue,white),Rotation=0},caption)
+    -- Draw the dropdown arrow; a Unicode arrow can display as a missing-glyph square.
+    for index,rotation in ipairs({45,-45})do
+        make("Frame",{Name="LanguageChevron"..index,Size=UDim2.fromOffset(5,2),AnchorPoint=Vector2.new(.5,.5),
+            Position=UDim2.new(1,index==1 and -15 or -12,.5,0),Rotation=rotation,
+            BackgroundColor3=palette.Accent,BorderSizePixel=0,ZIndex=102},button)
+    end
+    keep(button.MouseEnter,function()button.BackgroundTransparency=.3 end,panelLinks)
+    keep(button.MouseLeave,function()button.BackgroundTransparency=1 end,panelLinks)
+    local label
+    if not sidebar then label=make("TextLabel",{Name="LanguageLabel",Text="Language",BackgroundTransparency=1,
+        Size=UDim2.new(1,-124,1,0),TextXAlignment=Enum.TextXAlignment.Left,TextColor3=white,
+        Font=Enum.Font.GothamSemibold,TextSize=13,ZIndex=101},host)end
+    local menu=make("Frame",{Name="LanguageOptions",Visible=false,Position=UDim2.new(button.Position.X.Scale,button.Position.X.Offset,0,38),
+        AnchorPoint=button.AnchorPoint,Size=sidebar and UDim2.new(1,0,0,72)or UDim2.fromOffset(112,72),
+        BackgroundColor3=palette.Background,BackgroundTransparency=.04,BorderSizePixel=0,ZIndex=102},host)
+    make("UICorner",{CornerRadius=UDim.new(0,8)},menu)
+    make("UIStroke",{Color=palette.Accent,Transparency=.6,Thickness=1},menu)
+    local choices={}
+    for index,option in ipairs({{"EN","English"},{"TH","ไทย"}})do
+        local choice=make("TextButton",{Name="Language"..option[1],Text=option[2],Position=UDim2.fromOffset(4,(index-1)*32+4),
+            Size=UDim2.new(1,-8,0,28),BackgroundColor3=palette.Surface2,BackgroundTransparency=1,BorderSizePixel=0,
+            AutoButtonColor=false,TextColor3=white,Font=Enum.Font.GothamSemibold,TextSize=13,ZIndex=103},menu)
+        make("UICorner",{CornerRadius=UDim.new(0,6)},choice)
+        choices[option[1]]=choice
+        keep(choice.Activated,function()controller.SetLanguage(option[1]);menu.Visible=false end,panelLinks)
+        keep(choice.MouseEnter,function()choice.BackgroundTransparency=.15 end,panelLinks)
+        keep(choice.MouseLeave,function()choice.BackgroundTransparency=settings.Language==option[1]and 0 or 1 end,panelLinks)
+    end
+    keep(button.Activated,function()menu.Visible=not menu.Visible end,panelLinks)
+    keep(root:GetPropertyChangedSignal("Visible"),function()
+        if not root.Visible then menu.Visible=false end
+        refreshLayers(screen)
+    end,panelLinks)
+    local function sync()
+        caption.Text=settings.Language=="TH"and"ไทย"or"English"
+        if label then label.Text=settings.Language=="TH"and"ภาษา"or"Language"end
+        for code,choice in pairs(choices)do
+            local selected=code==settings.Language
+            choice.TextColor3=selected and palette.Accent or white
+            choice.BackgroundTransparency=selected and 0 or 1
+        end
+    end
+    local cleaned=false
+    local function cleanup()
+        if cleaned then return end;cleaned=true
+        for _,link in ipairs(panelLinks)do link:Disconnect()end
+        for node,properties in pairs(geometry)do for key,record in pairs(properties)do
+            pcall(function()if node[key]==record.Applied then node[key]=record.Source end end)
+        end end
+        ui[screen]=nil
+    end
+    ui[screen]={Frame=host,Root=root,Dock=sidebar,Update=sync,Reflow=reflow,Cleanup=cleanup}
+    keep(host.Destroying,cleanup,panelLinks)
+    function controller.Open()menu.Visible=true end
+    refreshUI=function()for _,panel in pairs(ui)do panel.Update()end end
+    reflow();sync();refreshLayers(screen)
+end
+
+local function mark(screen)
+    if owned[screen]or screen:GetAttribute("DevilBlueSettings")then return end
+    owned[screen]=true;controller.Report.screens+=1
+    for _,node in ipairs(screen:GetDescendants())do patch(node)end
+    windowRoot(screen)
+    if screen.Name~="DevilHubLoading"then createUI(screen)end
+end
+local function track(screen)
+    if not screen:IsA("ScreenGui")or tracked[screen]or screen:GetAttribute("DevilBlueSettings")then return end
+    local state={Links={},Probes=0,Roots=setmetatable({},{__mode="k"})};tracked[screen]=state
+    local function queueLayout()
+        if state.LayoutQueued then return end
+        state.LayoutQueued=true
+        task.defer(function()state.LayoutQueued=false;if not controller.Stopped and owned[screen]then createUI(screen)end end)
+    end
+    local function inspect(node)
+        if node:GetAttribute("DevilBlueSettings")or node:GetAttribute("DevilLocalizationOverlay")then return end
+        if node:IsA("GuiObject")and node.Parent==screen and not state.Roots[node]then
+            state.Roots[node]=true
+            local function discoverWindow()
+                local name=node.Name:lower()
+                if not roots[screen]or roots[screen]~=node and(name=="window"or name=="mainwindow"or name=="root")then queueLayout()end
+            end
+            keep(node:GetPropertyChangedSignal("AbsoluteSize"),discoverWindow,state.Links)
+            keep(node:GetPropertyChangedSignal("Name"),discoverWindow,state.Links)
+            keep(node:GetPropertyChangedSignal("Size"),function()if roots[screen]==node then queueLayout()end end,state.Links)
+        end
+        if owned[screen]then
+            patch(node)
+            if node.Parent==screen or not ui[screen]or node.Name=="Sidebar"or node.Name=="Tabs"or node.Name=="TabList"then queueLayout()end
+            return
+        end
+        if brandImage(node)then mark(screen);return end
+        if (node:IsA("ImageLabel")or node:IsA("ImageButton"))and state.Probes<24 then
+            state.Probes+=1
+            keep(node:GetPropertyChangedSignal("Image"),function()if brandImage(node)then mark(screen)end end,state.Links)
+        end
+        if node:IsA("TextLabel")or node:IsA("TextButton")then
+            if title(node.Text)then mark(screen)
+            elseif node.Text==""and state.Probes<24 then
+                state.Probes+=1
+                local link
+                link=keep(node:GetPropertyChangedSignal("Text"),function()
+                    if title(node.Text)then mark(screen)end
+                    if node.Text~=""then link:Disconnect()end
+                end,state.Links)
+            end
+        end
+    end
+    keep(screen.DescendantAdded,inspect,state.Links)
+    keep(screen:GetPropertyChangedSignal("AbsoluteSize"),function()
+        if controller.Stopped or not owned[screen]then return end
+        for _,child in ipairs(screen:GetChildren())do
+            local childState=states[child]
+            if childState and child:IsA("GuiObject")then refreshPlane(child,childState,true)end
+        end
+        queueLayout()
+    end,state.Links)
+    keep(screen:GetPropertyChangedSignal("Name"),function()if screen.Name:lower():match("^devilhub")then mark(screen)end end,state.Links)
+    keep(screen:GetAttributeChangedSignal("DevilHubPresentation"),function()if screen:GetAttribute("DevilHubPresentation")then mark(screen)end end,state.Links)
+    keep(screen.Destroying,function()
+        for _,link in ipairs(state.Links)do link:Disconnect()end
+        tracked[screen]=nil;owned[screen]=nil;roots[screen]=nil
+    end,state.Links)
+    if screen:GetAttribute("DevilHubPresentation")or screen.Name:lower():match("^devilhub")then mark(screen)end
+    for _,node in ipairs(screen:GetDescendants())do inspect(node)end
+end
+refreshAll=function()
+    for node,state in pairs(states)do for key in pairs(state.Source)do applyProperty(node,state,key)end end
+    for screen in pairs(owned)do windowRoot(screen)end
+    for _,record in pairs(localized)do record.Update()end
+    if refreshUI then refreshUI()end
+end
+function controller.Set(values)
+    valid(values);updatePalette();refreshAll();save();return table.clone(settings)
+end
+function controller.Get()return table.clone(settings)end
+function controller.Translate(text)return translate(text)end
+function controller.InspectLayers()
+    local report={}
+    for screen in pairs(owned)do
+        local root=windowRoot(screen)
+        if root then table.insert(report,{Screen=screen.Name,ScreenEnabled=screen.Enabled,Name=root.Name,Class=root.ClassName,Role="MainWindow",
+            Visible=root.Visible,BackgroundTransparency=root.BackgroundTransparency,Width=root.AbsoluteSize.X,Height=root.AbsoluteSize.Y})end
+        for _,node in ipairs(screen:GetDescendants())do if screenLayer(node)or dialogs[node]==screen then
+            local state=states[node]
+            table.insert(report,{Screen=screen.Name,ScreenEnabled=screen.Enabled,Name=node.Name,Parent=node.Parent and node.Parent.Name,Class=node.ClassName,Visible=node.Visible,
+                Role=dialogs[node]==screen and"BreakDialog"or"ScreenLayer",Width=node.AbsoluteSize.X,Height=node.AbsoluteSize.Y,
+                ScreenWidth=screen.AbsoluteSize.X,ScreenHeight=screen.AbsoluteSize.Y,
+                SizeXScale=node.Size.X.Scale,SizeXOffset=node.Size.X.Offset,SizeYScale=node.Size.Y.Scale,SizeYOffset=node.Size.Y.Offset,
+                BackgroundTransparency=node.BackgroundTransparency,SourceTransparency=state and state.Source.BackgroundTransparency,NativeVisible=state and state.Source.Visible,
+                BreakDialog=dialogs[node]==screen,Window=root and root.Name,WindowVisible=root and root.Visible})
+        end end
+    end
+    return report
+end
+function controller.SetLanguage(value)return controller.Set({Language=value})end
+function controller.Destroy()
+    if controller.Stopped then return end
+    controller.Stopped=true
+    for _,link in ipairs(links)do link:Disconnect()end
+    for _,state in pairs(tracked)do for _,link in ipairs(state.Links)do link:Disconnect()end end
+    for node,record in pairs(localized)do
+        for _,link in ipairs(record.Links)do link:Disconnect()end
+        clearOverlay(node,record)
+    end
+    for node,state in pairs(states)do
+        for _,link in ipairs(state.Links)do link:Disconnect()end
+        for key,value in pairs(state.Source)do pcall(function()if node[key]==state.Applied[key]then node[key]=value end end)end
+    end
+    for node,tone in pairs(waveTones)do tone:Destroy();waveTones[node]=nil end
+    table.clear(roots)
+    for _,panel in pairs(table.clone(ui))do panel.Cleanup();panel.Frame:Destroy()end
+    if scope.DevilHubBlueGui==controller then scope.DevilHubBlueGui=nil end
+end
+local containers={}
+local function watch(parent)
+    if not parent or containers[parent]then return end
+    containers[parent]=true;keep(parent.ChildAdded,track)
+    for _,screen in ipairs(parent:GetChildren())do track(screen)end
+end
+pcall(function()watch(game:GetService("CoreGui"))end)
+pcall(function()if type(gethui)=="function"then watch(gethui())end end)
+pcall(function()
+    local players=game:GetService("Players")
+    local function watchPlayer(player)
+        if not player then return end
+        watch(player:FindFirstChildOfClass("PlayerGui"))
+        keep(player.ChildAdded,function(child)if child:IsA("PlayerGui")then watch(child)end end)
+    end
+    watchPlayer(players.LocalPlayer)
+    if not players.LocalPlayer then keep(players:GetPropertyChangedSignal("LocalPlayer"),function()watchPlayer(players.LocalPlayer)end)end
+end)
+return controller
