@@ -4,7 +4,7 @@ do
     local current=shared.DevilHubBlueGui
     if not(current and current.Version=="devil-blue-20261019-10"and not current.Stopped)then
         local ok,problem=pcall(function()
-            local source=game:HttpGet("https://raw.githubusercontent.com/Razahaider51216/devil-scripthub/9a9812469df7b5dad2848abb33c5206f7d57e685/devil-blue-gui.lua")
+            local source=game:HttpGet("https://github.com/XxMarDdEvsZXsWu69/devil-scripthub/blob/main/devil-blue-gui.lua")
             assert(type(source)=="string"and #source==95003,"DEVIL blue GUI download size mismatch")
             local sum=0
             for i=1,#source do sum=(sum*33+source:byte(i))%4294967296;if i%32768==0 and task and task.wait then task.wait()end end
